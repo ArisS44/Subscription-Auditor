@@ -1,0 +1,60 @@
+# Claude Code & APM
+.claude/
+.apm/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Python packaging
+*.whl
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+*.dockerignore
+
+# Coverage / test
+.coverage
+htmlcov/
+.pytest_cache/
+coverage/
+
+# Vite / TypeScript
+*.tsbuildinfo
+
+# Extension build
+extension/dist/
+
+# Uploaded files (local dev)
+uploads/
+tmp/
