@@ -58,3 +58,56 @@ extension/dist/
 # Uploaded files (local dev)
 uploads/
 tmp/
+
+# Python linting / type checking caches
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# uv (Python package manager)
+.uv/
+uv.lock
+
+# ESLint / Prettier caches
+.eslintcache
+.prettiercache
+
+# Supabase local dev
+.supabase/
+supabase/.branches/
+supabase/.temp/
+
+# Azure / infra outputs
+infra/azure/.env
+infra/**/*.tfstate
+infra/**/*.tfstate.backup
+.terraform/
+*.tfvars
+
+# Docker volumes and overrides
+docker-compose.override.yml
+.docker/
+
+# Secrets / keys
+*.pem
+*.key
+*.p12
+*.pfx
+vapid_keys.json
+
+# OCR / PDF temp files (pytesseract, pdfplumber)
+*.tiff
+*.tif
+
+# Jupyter (if ever used for analytics exploration)
+.ipynb_checkpoints/
+*.ipynb
+
+# Chrome extension packed artifact
+*.crx
+*.zip
+
+# Lock files (keep only one — remove whichever you don't use)
+# package-lock.json  ← keep if using npm
+# yarn.lock          ← keep if using yarn
+# pnpm-lock.yaml     ← keep if using pnpm
