@@ -46,6 +46,15 @@ multi-agent**.
   "buffer overflow" on a managed stack. Constant-time compare for token hashes. Security headers set.
 - Secrets in Key Vault; `.env` gitignored; store only hashed extension tokens; least-privilege service role.
 
+**Private & compliant (GDPR + ePrivacy)**
+- Data minimization; don't send PII to Groq unless a feature needs it; no PII/message content in logs.
+- Ship a Privacy Policy disclosing data collected + sub-processors (Supabase, Groq, Azure). Explicit
+  opt-in for push + extension tracking + invoice uploads.
+- Build real data-export + full-deletion (cascade DB **and** Storage). Cookies/local-storage: only
+  strictly-necessary (auth token, language) → disclose, no consent banner needed while there's zero
+  non-essential tracking. Don't add banner theater; if tracking is ever added, a proper opt-in banner
+  becomes mandatory.
+
 **Educational — teach live while building**
 - The developer is new to most of the stack. **Explain _before_ building, pause work to teach every new
   concept before using it, build in small explained increments, and check understanding before moving on.**

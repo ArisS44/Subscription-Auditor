@@ -5,7 +5,8 @@
 > are persisted here (not in chat) and **every Planner kickoff must reference this file**:
 > _"All work must comply with `docs/ENGINEERING_STANDARDS.md`."_
 >
-> Three pillars: **Scalability & Modularity**, **Security (defense-in-depth)**, **Educational Tone**.
+> Four pillars: **Scalability & Modularity**, **Security (defense-in-depth)**, **Privacy & Data
+> Protection (GDPR/ePrivacy)**, **Educational Tone**.
 
 ---
 
@@ -92,7 +93,48 @@ for many concurrent users.**
 
 ---
 
-## C. Educational Tone — teach the developer *while* building
+## C. Privacy & Data Protection (GDPR + ePrivacy / cookie law)
+
+The developer is EU/Greek and the app handles personal data plus sensitive-adjacent data (uploaded bank
+statements). GDPR and the ePrivacy Directive apply. These are build-time requirements, not a
+launch-day afterthought.
+
+- **Data minimization.** Collect and store only what a feature needs. Do not send PII to the LLM (Groq)
+  unless a feature genuinely requires it; prefer sending IDs/derived values over raw personal data.
+  Never log message content or PII at INFO level (already in spec §11).
+- **Lawful basis + transparency.** Ship a **Privacy Policy** page (and reference it at signup) stating:
+  what data is collected, why, the legal basis, retention periods, and the third-party **sub-processors**
+  the data flows through — **Supabase** (DB/Auth/Storage), **Groq** (LLM), **Azure** (hosting/logs).
+  Users must be told their subscription/usage text is processed by an LLM provider.
+- **Data-subject rights (build the mechanisms, don't just promise them).** Export-all-data (JSON) and
+  full account+data deletion are already in scope (Session 7 / spec §10.5) — treat them as compliance
+  requirements: deletion must cascade across every table (the schema's `ON DELETE CASCADE` supports
+  this) **and** purge Supabase Storage uploads, not just DB rows.
+- **Consent where it's actually required:**
+  - **Web Push notifications** — explicit opt-in (the browser permission prompt covers this; store the
+    fact of consent).
+  - **Browser extension tracking** — the extension records browsing time on AI-tool domains; this is
+    the user tracking *their own* usage after explicitly pairing, but the pairing/onboarding must state
+    plainly what it tracks and let the user decline.
+  - **Invoice uploads** — the user actively uploads; make retention and deletion of these files clear.
+- **Cookie / local-storage policy (ePrivacy).** Categorize client-side storage and document it:
+  - **Strictly necessary** (auth/session tokens via Supabase, language preference) — exempt from consent
+    under ePrivacy, but must still be disclosed in the Privacy/Cookie Policy.
+  - **Non-essential** (analytics, marketing) — **currently none.** If none are ever added, a consent
+    banner is **not legally required** — do not add a cookie banner for compliance theater.
+  - **If any non-essential tracking is ever introduced**, a proper consent banner (opt-in, granular,
+    with reject-all as easy as accept-all) becomes mandatory before it loads. Document the decision in
+    `docs/DECISIONS.md`.
+  - Prefer `Secure`, `SameSite` attributes on any cookie; auth stays Bearer-JWT (see §B / CSRF).
+- **Retention & records.** Define retention for uploaded invoices, chat history, and usage events; don't
+  keep raw personal data indefinitely by default. Keep a short data-flow note (what goes where) in docs.
+- **Honesty over theater.** The app's privacy *story* is a selling point (no bank linking, no financial
+  credentials — spec §2/§10). Compliance work should reinforce that truthfully, not bolt on dark-pattern
+  banners. When a control isn't legally required, say so and skip it rather than fake-comply.
+
+---
+
+## D. Educational Tone — teach the developer *while* building
 
 This project is also a learning vehicle for its solo developer, who is **new to most of the stack**
 (React/TS, Tailwind, FastAPI, Docker, Azure, Chrome extensions). The requirement is **live, interactive
