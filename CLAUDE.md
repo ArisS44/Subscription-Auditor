@@ -68,3 +68,36 @@ multi-agent**.
   function components only.
 - Git: `main` is deployable; branches `feat/…` `fix/…` `chore/…`; Conventional Commits; commit often.
 - APM `.apm/` files are the source of truth; chat is disposable. One session = one deployable slice.
+
+APM_RULES {
+
+## Teaching cadence (every Task)
+
+This is an execution requirement on all hands-on work, not just documentation — see the **Educational** non-negotiable above. Operationally, on every meaningful unit of work:
+- **Explain before building.** State in plain English what you are about to do, why this approach, and which framework concept it introduces — then build.
+- **Stop and teach at every new concept.** The first time the project touches a concept (e.g. FastAPI dependency, RLS policy, JWT verification, asyncpg pool, Docker layer, Vite build, a React hook, Supabase Auth flow, GitHub Actions, `az` CLI), pause and give a short focused explanation before writing the code that uses it. Session 1 introduces many first-time concepts — expect frequent teaching pauses.
+- **Small increments, check understanding.** Build in small explained steps; after a non-trivial concept, invite questions / confirm before proceeding. Explain tradeoffs of the roads not taken. Assume strong general programming but little stack-specific knowledge.
+
+## External-platform / User-driven steps
+
+When a Task requires action outside the development environment (creating cloud projects, OAuth clients, running `supabase`/`az`/deploy commands against real accounts, setting deploy secrets), do not assume credentials or act on the User's behalf:
+- Prepare exact, ordered, explained commands; teach the concept; then **pause for the User to execute and report results** before continuing.
+- Never place real secrets in the repo — `.env` is gitignored, only `.env.example` templates are committed, and production secrets live in Key Vault.
+
+## Security & privacy (any Task touching input, data, or secrets)
+
+Apply the **Secure** and **Private & compliant** non-negotiables above. Always-on, concretely:
+- Validate all inbound data with Pydantic on the backend (the trust boundary); Zod on the frontend is UX only. Parameterized SQL only — never string-built queries. Keep API auth as Bearer JWT in the `Authorization` header (never cookies).
+- No PII or message content in logs. Set the standard security response headers where the Task produces HTTP responses.
+- Security work ships complete for any surface that goes live — never leave a live surface half-secured.
+
+## Layering & config
+
+- Backend: strict `routers/` → `services/` → `db/` layering, no leakage. Frontend: feature-scoped modules. Config comes from environment only — no hardcoded hosts, keys, or magic numbers.
+
+## Learning artifacts & validation
+
+- Append newly introduced concepts to `docs/LEARNING_LOG.md` (concept, one-paragraph plain-English explanation, and a "look here in the code" pointer). Record non-obvious choices as ADRs in `docs/adr/` (capture the reasoning and tradeoff, not just the choice). Comments explain *why*, not *what*.
+- Do not consider a Task complete until its stated validation criteria are met and verified. Where validation requires the User (external checks or human judgment), pause and request it rather than assuming success.
+
+} //APM_RULES
