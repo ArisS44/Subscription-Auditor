@@ -100,4 +100,9 @@ Apply the **Secure** and **Private & compliant** non-negotiables above. Always-o
 - Append newly introduced concepts to `docs/LEARNING_LOG.md` (concept, one-paragraph plain-English explanation, and a "look here in the code" pointer). Record non-obvious choices as ADRs in `docs/adr/` (capture the reasoning and tradeoff, not just the choice). Comments explain *why*, not *what*.
 - Do not consider a Task complete until its stated validation criteria are met and verified. Where validation requires the User (external checks or human judgment), pause and request it rather than assuming success.
 
+## Version control
+
+- Base branch: `main` (deployable). One feature branch per dispatch unit off `main`; a batch of sequential Tasks for one Worker shares a branch. Branch names are `type/short-description` (`feat/`, `fix/`, `chore/`, `docs/`, `refactor/`, `test/`) describing the actual work — no APM identifiers in branch or commit names.
+- Commits follow Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`); commit often. Do not commit build artifacts or generated files. Never push to the remote unless explicitly required (e.g. CI/CD deploy triggers) or asked.
+
 } //APM_RULES
