@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     vapid_subject: str = ""
     applicationinsights_connection_string: str = ""
     env: str = "development"
+    db_pool_min_size: int = 1
+    db_pool_max_size: int = 10
+    auth_rate_limit_per_minute: int = 20
 
 
 settings = Settings()  # type: ignore[call-arg]

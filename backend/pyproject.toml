@@ -6,8 +6,11 @@ requires-python = ">=3.12"
 dependencies = [
     "asyncpg>=0.31.0",
     "fastapi>=0.139.0",
+    "httpx>=0.28.1",
+    "limits>=5.8.0",
     "pydantic>=2",
     "pydantic-settings>=2.14.2",
+    "pyjwt[crypto]>=2.13.0",
     "uvicorn[standard]>=0.50.0",
 ]
 
@@ -15,6 +18,8 @@ dependencies = [
 dev = [
     "black>=26.5.1",
     "mypy>=2.1.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.15.20",
 ]
 
@@ -34,3 +39,6 @@ python_version = "3.12"
 ignore_missing_imports = true
 disallow_untyped_defs = false
 check_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
