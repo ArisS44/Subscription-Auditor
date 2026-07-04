@@ -40,8 +40,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# Docker
-*.dockerignore
 
 # Coverage / test
 .coverage
@@ -66,7 +64,6 @@ tmp/
 
 # uv (Python package manager)
 .uv/
-uv.lock
 
 # ESLint / Prettier caches
 .eslintcache
