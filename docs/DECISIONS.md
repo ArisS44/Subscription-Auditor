@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-07-04 — Minimal schema for Session 1 (profiles only)
+
+**Decision:** The first Supabase migration (`supabase/migrations/20260704152946_create_profiles_table.sql`)
+creates only the `profiles` table — not the full data model described in `APP_DESCRIPTION.md`
+(subscriptions, usage logs, invoices, etc.).
+
+**Why:** the broader data model may still change as later sessions clarify requirements. Committing to
+the full schema now risks migrations that need reworking before they're ever used. `profiles` is the one
+table every other session depends on (it's tied to `auth.users` via the signup trigger), so it's the only
+piece worth locking in now.
+
+**How to apply:** future sessions add their own tables via new versioned migrations under
+`supabase/migrations/`, following the same RLS pattern (`auth.uid() = <owning-column>`) established here.
+Don't treat the current `profiles` schema as exhaustive — expect it to gain columns over time.
+
+**Also noted:** the Supabase CLI's standard project layout is a top-level `supabase/` directory
+(`supabase/config.toml`, `supabase/migrations/`), not the `infra/supabase/` placeholder the initial
+monorepo scaffold created. The CLI's convention was kept as-is (it's what `supabase db push`, CI, and
+all tooling expect by default); the `infra/supabase/.gitkeep` stub is currently unused.
+
+---
+
 ## 2026-07-01 — Incremental delivery / MVP strategy
 
 **Decision:** Build the 7 sessions as independently deployable slices (as `APM_SESSIONS.md` already
