@@ -1,0 +1,15 @@
+{
+  "landing": {
+    "title": "Subscription Auditor",
+    "subtitle": "Track, analyze, and optimize your recurring subscriptions.",
+    "cta": "Get started"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "placeholder": "Your subscriptions will appear here."
+  },
+  "nav": {
+    "home": "Home",
+    "dashboard": "Dashboard"
+  }
+}
