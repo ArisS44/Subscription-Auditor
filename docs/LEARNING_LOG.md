@@ -111,3 +111,63 @@ byte at a time. `hmac.compare_digest` always takes the same time regardless of w
 inputs differ. Not yet used against a real secret this session (no token-hash comparison exists
 yet), but established as the pattern for the extension-token check in a later session. Look here:
 `backend/app/security/compare.py`.
+
+## Session 3 (2026-07-04) — Frontend Skeleton
+
+### Vite
+Vite is the frontend build tool and dev server. In dev it serves source files directly as native ES
+modules and only transforms what the browser actually requests, instead of bundling the whole app
+upfront (the older Webpack/CRA model) — that's what makes startup and hot-reload near-instant even
+as the app grows. For production it switches to a Rollup-based bundle. Look here: `frontend/vite.config.ts`.
+
+### Tailwind CSS (utility-first, v4 CSS-first config)
+Instead of hand-writing CSS classes and switching files, styling is composed from small
+single-purpose utility classes directly in JSX (`className="p-4 rounded-lg bg-slate-900"`). Tailwind
+v4 configures itself from CSS (`@import 'tailwindcss'` plus `@theme`/CSS variables) rather than a
+separate `tailwind.config.js`. Unused utilities are stripped at build time. Look here:
+`frontend/src/index.css`, `frontend/vite.config.ts` (`@tailwindcss/vite` plugin).
+
+### shadcn/ui (copy-paste ownership, not a package)
+shadcn/ui's CLI copies component source (e.g. `Button`) directly into the repo under
+`src/components/ui/`, built on accessible primitives and styled with Tailwind, rather than installing
+an opaque component library from `node_modules`. The tradeoff vs. a prebuilt kit (MUI, Chakra): more
+files to own and maintain, but no fighting a vendored API when a one-off tweak is needed. This
+project's generator used Base UI primitives (`@base-ui/react`) rather than Radix — its polymorphism
+API is a `render` prop, not Radix's `asChild`, which is why `Landing.tsx` applies `buttonVariants()`
+to a `Link` directly instead of wrapping `<Button asChild>`. Look here:
+`frontend/src/components/ui/button.tsx`, `frontend/components.json`.
+
+### Dark mode as default (`class` strategy)
+shadcn/ui's generated CSS defines two variable sets — `:root` (light) and `.dark` (dark) — selected
+by a `dark` class rather than the OS-level `prefers-color-scheme` media query. Applying `class="dark"`
+directly on `<html>` in `index.html` makes dark the default regardless of OS setting, while still
+leaving room for a future user-toggle to swap the class at runtime. Look here: `frontend/index.html`,
+`frontend/src/index.css`.
+
+### React Router v6
+Client-side routing swaps components in place as the URL changes, without a full page reload.
+`<BrowserRouter>` wraps `<Routes>`/`<Route>` elements matched against the current path. This session
+only adds placeholder routes (a landing page and a dashboard stub) with no auth guarding — that's the
+next task. Look here: `frontend/src/App.tsx`, `frontend/src/routes/`.
+
+### react-i18next (keyed strings from the start)
+Display strings are looked up by key (`t('landing.cta')`) against per-language JSON files rather than
+hardcoded in JSX, so every string has a translation slot from day one instead of a retrofit later.
+`en` and `el` locale files are loaded eagerly and registered with `i18next-browser-languagedetector`
+for automatic language detection. Look here: `frontend/src/i18n/index.ts`,
+`frontend/src/i18n/locales/`.
+
+### TanStack Query (server state, not raw `useEffect` + `fetch`)
+TanStack Query manages data fetched from an API — caching, deduplication, background refetching,
+loading/error state — so components don't hand-roll that bookkeeping with `useEffect` and `useState`.
+A single `QueryClient` is created once and provided via `QueryClientProvider` at the app root, even
+though no queries exist yet; the next task's `GET /api/v1/me` call will be the first consumer. Look
+here: `frontend/src/App.tsx`.
+
+### Client library shape for the next task's auth flow
+`src/lib/supabase.ts` exports a singleton Supabase browser client built from `VITE_SUPABASE_URL` /
+`VITE_SUPABASE_ANON_KEY` — safe to expose client-side because RLS enforces real access control
+server-side. `src/lib/api.ts` exports `apiFetch(path, options)`, where `options.accessToken` (if
+present) is turned into an `Authorization: Bearer <token>` header; the next task's auth flow supplies
+that token from the Supabase session without needing to touch this file's structure. Look here:
+`frontend/src/lib/supabase.ts`, `frontend/src/lib/api.ts`.
