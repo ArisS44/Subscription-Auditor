@@ -171,3 +171,37 @@ server-side. `src/lib/api.ts` exports `apiFetch(path, options)`, where `options.
 present) is turned into an `Authorization: Bearer <token>` header; the next task's auth flow supplies
 that token from the Supabase session without needing to touch this file's structure. Look here:
 `frontend/src/lib/supabase.ts`, `frontend/src/lib/api.ts`.
+
+## Session 4 (2026-07-05) — Quality Baseline & Pre-commit
+
+### The pre-commit framework
+A git-hook manager that reads a version-controlled `.pre-commit-config.yaml` instead of hand-written
+scripts in the untracked `.git/hooks/` folder. For each configured hook it builds an isolated, pinned
+environment (its own venv/Node install) to run that one tool, so `ruff` and `eslint` run sandboxed
+regardless of what's on the developer's machine. `pre-commit install` wires it into `git commit`;
+`pre-commit run --all-files` runs every hook on demand without committing. Look here:
+`.pre-commit-config.yaml`.
+
+### Pinned hook revisions (supply-chain hygiene)
+Each hook entry points at a public git repo (e.g. `astral-sh/ruff-pre-commit`) that pre-commit clones
+and executes. Pinning to an exact tag rather than a floating branch (`main`) means a maintainer's
+future push can't silently change what code runs on every commit — the same reasoning as pinning
+`pyproject.toml`/`package.json` versions, applied to hook definitions. Look here:
+`.pre-commit-config.yaml`, the `rev:` field on each `repo:` entry.
+
+### Local hooks for a project's own toolchain
+The frontend's `eslint.config.js` (flat config) depends on plugins (`typescript-eslint`,
+`eslint-plugin-react-hooks`, etc.) that a generic pre-commit mirror hook can't see, since the mirror
+runs eslint in its own isolated environment without those plugins installed. A `repo: local` hook
+with `language: system` instead shells out to the frontend's *own* `node_modules/.bin` tools, so it
+sees the exact plugin set already installed via `npm install`. Look here: `.pre-commit-config.yaml`,
+the `eslint`/`prettier` local hooks.
+
+### Secret scanning (`gitleaks`)
+A hook that inspects the staged diff for patterns that look like credentials (API keys, private keys,
+tokens) before a commit is created. Once a secret is committed, deleting the file later doesn't remove
+it from history — it's still recoverable from old commits — so blocking at commit-time is the only
+point where removal is actually free. Verified by staging AWS's own publicly documented example access-key-ID format (the standard
+placeholder AWS uses in its docs, distinguishable by an `EXAMPLE` suffix) and confirming `gitleaks`
+rejected the commit attempt (`aws-access-token` rule) before it was removed and a clean commit
+succeeded. Look here: `.pre-commit-config.yaml`, the `gitleaks` hook.

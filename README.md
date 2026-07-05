@@ -153,6 +153,20 @@ For the extension: run `npm run dev` inside `extension/`, then go to `chrome://e
 
 ---
 
+## Code Quality (pre-commit)
+
+Formatting, linting, and secret scanning run automatically on every commit via [pre-commit](https://pre-commit.com/), configured in `.pre-commit-config.yaml`.
+
+```bash
+uv tool install pre-commit   # one-time, any machine with uv installed
+pre-commit install           # wires the git hook for this clone
+pre-commit run --all-files   # run every hook against the whole repo on demand
+```
+
+Hooks: `ruff` + `black` (backend, via `backend/pyproject.toml`), `eslint` + `prettier` (frontend, via the frontend's own configs), `gitleaks` (blocks commits containing credential-shaped strings), plus basic hygiene checks (trailing whitespace, end-of-file newline, merge conflict markers, large files).
+
+---
+
 ## Docs
 
 All detailed documents are in the `docs/` folder:

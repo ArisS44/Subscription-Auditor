@@ -1,0 +1,47 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      - id: ruff
+        name: ruff (backend)
+        files: ^backend/
+        args: [--fix]
+
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 26.5.1
+    hooks:
+      - id: black
+        name: black (backend)
+        files: ^backend/
+
+  # eslint/prettier run as local hooks against the frontend's own toolchain
+  # (already installed under frontend/node_modules) rather than a mirror repo,
+  # since the flat eslint.config.js pulls in plugins (typescript-eslint,
+  # eslint-plugin-react-hooks, etc.) a generic mirror hook can't see.
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint (frontend)
+        language: system
+        files: ^frontend/src/.*\.(ts|tsx)$
+        entry: bash -c 'cd frontend && rel=(); for f in "$@"; do rel+=("${f#frontend/}"); done; npx eslint --fix "${rel[@]}"' --
+
+      - id: prettier
+        name: prettier (frontend)
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js|jsx|json|css|md)$
+        exclude: ^frontend/(dist|node_modules)/
+        entry: bash -c 'cd frontend && rel=(); for f in "$@"; do rel+=("${f#frontend/}"); done; npx prettier --write "${rel[@]}"' --
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.9.0
+    hooks:
+      - id: gitleaks
