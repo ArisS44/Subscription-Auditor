@@ -205,3 +205,57 @@ point where removal is actually free. Verified by staging AWS's own publicly doc
 placeholder AWS uses in its docs, distinguishable by an `EXAMPLE` suffix) and confirming `gitleaks`
 rejected the commit attempt (`aws-access-token` rule) before it was removed and a clean commit
 succeeded. Look here: `.pre-commit-config.yaml`, the `gitleaks` hook.
+
+## Session 5 (2026-07-05) — Auth Flows & Protected Page
+
+### CORS (Cross-Origin Resource Sharing)
+Browsers enforce the same-origin policy: JS on `http://localhost:5173` is blocked by default from
+reading responses from `http://localhost:8000` — different port means different origin, and only the
+*server* can opt in via response headers, not the client. Any request that isn't a "simple" GET/POST —
+our `GET /me` with a custom `Authorization` header qualifies — triggers an invisible preflight
+`OPTIONS` request first, asking permission before the real request is sent. FastAPI's `CORSMiddleware`
+answers both the preflight and adds the allow-origin headers to real responses. It's added outermost
+of all middleware (added last, since Starlette wraps in reverse-add order) so preflight requests are
+answered before ever reaching the per-IP rate limiter — a legitimate cross-origin caller's preflight
+shouldn't be able to trip a limit meant for the real request. The allowed origin comes from
+`CORS_ALLOW_ORIGINS`, not a hardcoded string, so a later Stage-4 task can add the production frontend
+origin without touching code. Look here: `backend/app/main.py`, `backend/app/config.py`
+(`cors_allow_origins_list`).
+
+### Supabase Auth client flows (signup, login, OAuth, reset, logout)
+All of these are just methods on the `@supabase/supabase-js` client, calling Supabase's own Auth API
+directly from the browser — no custom backend endpoints needed for auth itself (the backend only
+verifies the resulting JWT). `signUp` triggers a confirmation email when email confirmation is
+required; `signInWithPassword` exchanges credentials for a session; `signInWithOAuth({ provider:
+'google' })` redirects to Google and back; `resetPasswordForEmail` + `updateUser({ password })` cover
+the two-step password-reset flow (request link → set new password from the temporary session the
+link establishes); `signOut` revokes the refresh token. Learned live: Supabase deliberately returns a
+*fake success* from `signUp` for an already-registered email — no error, no email sent, no new record
+— specifically to prevent email-enumeration attacks (an error would let an attacker probe which
+addresses have accounts). Look here: `frontend/src/routes/auth/`.
+
+### Protected routing / route guards
+A guard is just a component that reads auth state and either renders its children or redirects. The
+subtlety is the async gap on first load: Supabase needs a moment to check storage for an existing
+session before we know if the user is authenticated, so the guard must render nothing (not redirect)
+during that loading window — otherwise every page load flashes a redirect to `/login` and back, even
+for already-logged-in users. `onAuthStateChange` is the single source of truth for session state
+afterward, kept in a `React.Context` at the app root so any component can read it. Look here:
+`frontend/src/features/auth/AuthProvider.tsx`, `ProtectedRoute.tsx`.
+
+### Session persistence and "remember me"
+Supabase persists the session to `localStorage` and auto-refreshes it by default — that's what "stay
+logged in across reloads" means out of the box, with no extra code. To make "remember me" an actual
+per-login choice, the client takes a custom `storage` adapter instead of the default: a small wrapper
+that checks a flag (`auth-remember-me`, set right before sign-in) and routes reads/writes to either
+`localStorage` (survives browser restarts) or `sessionStorage` (cleared when the tab closes). Look
+here: `frontend/src/lib/supabase.ts`.
+
+### Vitest + React Testing Library
+Vitest reuses Vite's own transform pipeline for tests (no separate Babel/webpack config) and exposes a
+Jest-compatible API. React Testing Library renders components into a simulated DOM (`jsdom`) and
+queries them the way a user would (by visible text/role), so tests survive internal refactors. The
+smoke test mocks `@/lib/supabase` entirely rather than hitting the real network, so it verifies the
+*guard's* redirect logic deterministically without depending on Supabase being reachable or a session
+existing. Look here: `frontend/vite.config.ts` (the `test` block), `frontend/src/test/setup.ts`,
+`frontend/src/features/auth/ProtectedRoute.test.tsx`.
