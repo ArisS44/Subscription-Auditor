@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     db_pool_min_size: int = 1
     db_pool_max_size: int = 10
     auth_rate_limit_per_minute: int = 20
+    cors_allow_origins: str = "http://localhost:5173"
+
+    @property
+    def cors_allow_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allow_origins.split(",") if origin.strip()]
 
 
 settings = Settings()  # type: ignore[call-arg]
