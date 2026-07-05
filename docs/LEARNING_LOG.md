@@ -259,3 +259,40 @@ smoke test mocks `@/lib/supabase` entirely rather than hitting the real network,
 *guard's* redirect logic deterministically without depending on Supabase being reachable or a session
 existing. Look here: `frontend/vite.config.ts` (the `test` block), `frontend/src/test/setup.ts`,
 `frontend/src/features/auth/ProtectedRoute.test.tsx`.
+
+## Session 6 (2026-07-06) — Azure Provisioning
+
+### Resource groups, ACR, and Container Apps
+A resource group is just a logical bucket — everything provisioned lives inside one so it can be
+deleted or audited as a unit. Azure Container Registry (ACR) is a private Docker registry; CI pushes
+images there and the Container App pulls from there. A Container App runs on a shared "environment"
+(networking/logging boundary) and can scale to zero replicas when idle, so it costs roughly nothing
+between requests — the tradeoff is a cold start on the next one. Look here: `infra/azure/README.md`
+§§1-3.
+
+### Managed identity + Key Vault secret references
+Rather than embedding credentials, the Container App gets a system-assigned managed identity (its own
+service-principal-like identity with no password to leak), then narrow Azure RBAC roles (`AcrPull`,
+`Key Vault Secrets User`) are granted to that identity, scoped to just the one ACR and one Key Vault it
+needs. Key Vault holds the real secret values; the Container App's own "secrets" are just references
+(`keyvaultref:<uri>,identityref:system`) resolved at startup via that identity — the plaintext value
+never sits in the Container App's own config. Role-assignment propagation can lag a minute or two after
+creation. Look here: `infra/azure/README.md` §§3-4.
+
+### Static Web Apps region constraints (two separate restriction layers)
+Learned live, the hard way: a subscription-level Azure Policy (`sys.regionrestriction`, common on Azure
+for Students subscriptions) can block deployments to most regions — but even once that's lifted,
+Static Web Apps has its *own* separate fixed list of supported hosting regions, independent of general
+Azure region availability (e.g. `germanywestcentral`, used for every other resource here, isn't on that
+list; `westeurope` is). Both restrictions have to be satisfied, not just one. Look here:
+`infra/azure/README.md` §5.
+
+### Subscription upgrade instead of subscription move
+Assumed going in that an Azure for Students subscription couldn't convert in place to Pay-As-You-Go and
+would require standing up a brand-new subscription (with the existing resources needing to move or be
+recreated there). In practice, the Portal's Cost Management → "Upgrade" flow converted the *same*
+subscription (identical subscription ID) to Pay-As-You-Go directly, preserving every already-provisioned
+resource with no move/recreate step needed, and it removed the region-restriction policy as a side
+effect. A subscription-level Budget with threshold alerts (50/80/100% of a fixed cap) was set up
+immediately after, since Pay-As-You-Go has no spending limit by default the way the student offer did.
+Look here: `infra/azure/README.md` (Region note / Subscription note under §5).
