@@ -11,5 +11,50 @@
   "nav": {
     "home": "Home",
     "dashboard": "Dashboard"
+  },
+  "hello": {
+    "greeting": "Hello, {{email}}",
+    "loading": "Loading your profile…",
+    "error": "Could not load your profile. Please try again.",
+    "logout": "Log out"
+  },
+  "auth": {
+    "email": "Email",
+    "password": "Password",
+    "newPassword": "New password",
+    "rememberMe": "Remember me",
+    "orDivider": "or",
+    "login": {
+      "title": "Log in",
+      "submit": "Log in",
+      "googleCta": "Continue with Google",
+      "forgotPassword": "Forgot your password?",
+      "noAccount": "Don't have an account?",
+      "signupCta": "Sign up",
+      "error": "Invalid email or password."
+    },
+    "signup": {
+      "title": "Create an account",
+      "submit": "Sign up",
+      "hasAccount": "Already have an account?",
+      "loginCta": "Log in",
+      "error": "Could not create your account. Please try again.",
+      "checkEmailTitle": "Check your email",
+      "checkEmailBody": "We sent a confirmation link to {{email}}. Confirm your email to finish signing up."
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "instructions": "Enter your email and we'll send you a link to reset your password.",
+      "submit": "Send reset link",
+      "backToLogin": "Back to login",
+      "success": "If an account exists for {{email}}, a reset link has been sent.",
+      "error": "Could not send the reset link. Please try again."
+    },
+    "resetPassword": {
+      "title": "Set a new password",
+      "submit": "Update password",
+      "success": "Your password has been updated. You can now log in.",
+      "error": "Could not update your password. The reset link may have expired."
+    }
   }
 }
