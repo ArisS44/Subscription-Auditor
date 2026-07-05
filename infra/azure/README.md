@@ -269,13 +269,26 @@ reference.
 
 Free tier, CDN-backed static hosting purpose-built for SPAs.
 
+**Region note:** Static Web Apps has its own fixed list of supported hosting regions, separate from
+general Azure region availability — `germanywestcentral` (used for every other resource above) is not
+one of them. Use a supported region instead; `westeurope` is the closest one geographically. This
+applies regardless of any subscription-level region-restriction policy.
+
+**Subscription note:** this project's subscription was originally Azure for Students, which restricted
+deployments to the five regions listed at the top of this file. It was later upgraded **in place** to
+Pay-As-You-Go via the Azure Portal (Cost Management → "Upgrade") — same subscription ID, all
+already-provisioned resources untouched, no need to move or recreate anything. The upgrade removed the
+`sys.regionrestriction` policy assignment entirely. A ~€10/month subscription-level Budget with alerts
+(50/80/100%) was set up in the Portal (Cost Management → Budgets) before creating any further resources,
+given Pay-As-You-Go has no spending limit by default.
+
 ```bash
 SWA_NAME=swa-subscription-auditor
 
 az staticwebapp create \
   --resource-group "$RG" \
   --name "$SWA_NAME" \
-  --location "$LOCATION" \
+  --location westeurope \
   --sku Free
 ```
 
