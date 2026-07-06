@@ -296,3 +296,52 @@ resource with no move/recreate step needed, and it removed the region-restrictio
 effect. A subscription-level Budget with threshold alerts (50/80/100% of a fixed cap) was set up
 immediately after, since Pay-As-You-Go has no spending limit by default the way the student offer did.
 Look here: `infra/azure/README.md` (Region note / Subscription note under §5).
+
+### GitHub Actions: workflows, jobs, steps, and triggers
+A workflow is a YAML file in `.github/workflows/` describing automation triggered by repo events —
+`on: push: branches: [main]` means "run on every commit landing on `main`," optionally narrowed further
+with `paths` so unrelated changes don't trigger it. A workflow holds one or more jobs, each running on
+its own fresh virtual machine in parallel by default (`needs: <job>` forces ordering — used here so the
+backend's image only builds/deploys after its test job passes). Each job is a sequence of steps: either a
+shell command (`run:`) or a reusable action (`uses: owner/action@version`). `workflow_dispatch` adds a
+manual "Run workflow" button — but critically, GitHub only lists a workflow for manual dispatch once that
+workflow file exists on the repository's *default* branch; a workflow only present on a feature branch
+can't be dispatched from the Actions UI, discovered live when trying to validate before the first merge.
+Look here: `.github/workflows/backend.yml`, `.github/workflows/frontend.yml`.
+
+### OIDC federated credentials for CI → Azure auth
+Rather than storing a long-lived Azure credential as a GitHub secret, an Azure AD app registration can
+trust GitHub's own short-lived, cryptographically-signed OIDC tokens directly via a federated credential.
+The credential's `subject` field (`repo:<org>/<repo>:ref:refs/heads/main`) is the trust condition — only
+workflow runs matching that exact subject (this repo, this branch) can authenticate as that identity, and
+there's no secret to rotate or leak. `azure/login@v2` exchanges the run's GitHub-issued token for a real
+Azure access token at run time, scoped to whatever narrow RBAC roles (`AcrPush`, `Container Apps
+Contributor`) were granted to the app registration. Look here: `.github/workflows/backend.yml` (the
+`azure/login` step).
+
+### Static Web Apps navigation fallback (SPA routing on a static host)
+A static file host has no idea a URL like `/dashboard` is a React Router client-side route rather than a
+literal file — so a direct load or hard refresh on any non-root path 404s unless told otherwise. A
+`staticwebapp.config.json` with a `navigationFallback` rule (rewrite unmatched paths to `/index.html`,
+excluding real static-asset patterns) tells Azure to hand unmatched requests to the SPA's own router
+instead. Vite copies anything placed in `frontend/public/` into the built `dist/` unchanged, which is how
+this file ends up at the deployed site's root. Discovered live: refreshing the authenticated dashboard
+page in production hit Azure's own 404 page instead of the app, since this file didn't exist yet. Look
+here: `frontend/public/staticwebapp.config.json`.
+
+### Supabase's Site URL vs. Redirect URLs allowlist
+Two separate settings, easy to conflate: **Redirect URLs** is an allowlist of URLs OAuth/email-link
+redirects are permitted to target; **Site URL** is the *default* redirect used when a flow (like an email
+confirmation link) doesn't specify an explicit `redirectTo` — and it still defaults to
+`http://localhost:3000` until changed, even after the allowlist has a real production URL in it. Missing
+this caused a production confirmation email to redirect to `localhost`. Look here: prod Supabase project
+→ Authentication → URL Configuration.
+
+### Supabase's default email service is rate-limited by design
+Supabase's built-in email sending (active with zero configuration) is capped at a low volume per hour —
+adequate for occasional dev testing, not real user traffic. The Rate Limits panel exposes a configurable
+number, but raising it has no effect without a custom SMTP provider (e.g. Resend, SendGrid) configured
+first; only then does that number govern real throughput through your own provider. Sending to arbitrary
+real recipients (not just your own verified test address) also generally requires a verified sending
+domain. Deferred to a later session pending a domain purchase. Look here: prod Supabase project →
+Authentication → Rate Limits.
