@@ -1,0 +1,88 @@
+name: Backend CI/CD
+
+# Runs on every push to main that touches the backend, plus a manual
+# "Run workflow" button in the Actions tab (workflow_dispatch) for the
+# first deploy, before any backend/** change has landed on main yet.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # The pytest suite is not hermetic: several tests exercise the real
+      # dev Supabase project (RLS via a live asyncpg connection, and real
+      # users minted/deleted through the Auth Admin API). These must be
+      # the DEV project's values, never prod.
+      SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_JWT_SECRET: ${{ secrets.DEV_SUPABASE_JWT_SECRET }}
+      DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Format check (black)
+        run: uv run black --check .
+
+      - name: Run tests
+        run: uv run pytest
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # id-token: write lets this job request the short-lived OIDC token
+    # that azure/login exchanges for an Azure access token - no client
+    # secret stored in GitHub at all.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name acrsubscriptionauditor
+
+      - name: Build and push image
+        working-directory: backend
+        run: |
+          IMAGE="acrsubscriptionauditor.azurecr.io/subscription-auditor-backend:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Update Container App revision
+        run: |
+          az containerapp update \
+            --resource-group rg-subscription-auditor-prod \
+            --name ca-subscription-auditor-backend \
+            --image "$IMAGE"
