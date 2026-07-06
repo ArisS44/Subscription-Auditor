@@ -140,6 +140,8 @@
 
 **Scope:**
 - Application Insights wiring (structured logs, traces, key events)
+- **Custom domain**: purchase a domain and map it to the Static Web App (frontend) and, if desired, the Container App (backend) as custom domains + DNS + managed TLS; update Supabase Auth Site URL / redirect allowlist and backend `CORS_ALLOW_ORIGINS` to the real domain
+- **Production auth email (custom SMTP)**: wire Supabase Auth to a custom SMTP provider (e.g. Resend/SendGrid) with a verified sending domain (depends on the custom domain above), replacing Supabase's rate-limited default email service so signup-verification and password-reset emails are reliable at real user volume — *deferred here from Session 1, where the default service's rate limit was hit during testing*
 - Security review (RLS policies audited, JWT verification audited, secrets in Key Vault confirmed, rate limits sane)
 - Edge cases (no subscriptions, no usage data, LLM errors, network failures)
 - Empty states and loading states across all UI
