@@ -8,7 +8,7 @@ from app.config import settings
 from app.db.pool import close_pool, create_pool
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import health, me
+from app.routers import health, me, subscriptions
 
 
 @asynccontextmanager
@@ -35,9 +35,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins_list,
     allow_credentials=False,
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(me.router, prefix="/api/v1")
+app.include_router(subscriptions.router, prefix="/api/v1")

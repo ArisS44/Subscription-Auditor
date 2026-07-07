@@ -89,3 +89,10 @@ class SubscriptionListResponse(BaseModel):
 
     items: list[SubscriptionResponse]
     total: int
+
+
+class SubscriptionCancel(BaseModel):
+    """Optional body for the cancel endpoint. When `cancellation_date` is omitted
+    the service defaults it to today."""
+
+    cancellation_date: date | None = None

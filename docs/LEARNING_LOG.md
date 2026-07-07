@@ -373,3 +373,38 @@ rest of the contract: `Field(ge=0, max_digits=10, decimal_places=2)` on `price` 
 backend — the trust boundary — bounds them); typing dates as `date` rejects malformed values at parse time.
 Look here: `backend/app/models/subscription.py` (the `Literal` aliases and `Annotated[..., Field(...)]`
 constraints), enforced against the CHECKs in the migration above.
+
+### Layered write path (router → service → db)
+Each layer has exactly one job, and nothing leaks across the boundary. The **router**
+(`app/routers/subscriptions.py`) speaks HTTP only: it parses/validates the request, calls a service, and
+maps results and `SubscriptionNotFoundError` to status codes — it never runs a query. The **service**
+(`app/services/subscription.py`) holds the business logic: the hybrid renewal-date rule, deciding when to
+recompute it on update, and orchestrating the connection. The **db** layer (`app/db/subscriptions.py`)
+holds *only* parameterized SQL and makes no decisions. Two payoffs of the split: the renewal rule is a
+pure function (`compute_next_renewal_date`) unit-testable with no DB or HTTP, and every value crosses into
+SQL as a bound `$n` parameter — the one thing that can't be bound, the `ORDER BY` column/direction, is
+validated against a fixed allowlist so a caller can't inject SQL through the sort. `user_id` is taken only
+from the JWT `sub` claim in the service, never from the request body (`SubscriptionCreate` has no such
+field), so a client can't write into another user's rows.
+
+### Why `rls_connection` transaction-scoping is the security boundary
+Every read and write in this session goes through `rls_connection(claims)` (`app/db/rls.py`), which opens a
+transaction and runs `set_config('request.jwt.claims', ..., is_local=true)` so the RLS policies' `auth.uid()`
+resolves to the caller. The `is_local=true` is the whole game: it only takes effect *inside* a transaction
+and is auto-reset when the transaction ends. Outside a transaction it silently no-ops — the query would then
+run under the pooled connection's default (superuser) role and **bypass RLS entirely**, returning every
+user's rows. Because it's transaction-scoped, a pooled connection handed to the next request can't leak the
+previous caller's identity. A subtle consequence for writes: the "get non-owner's row → 404" behavior isn't
+application code checking ownership — RLS filters the row out at the DB before the query returns, so
+`UPDATE`/`DELETE`/`SELECT` on someone else's id naturally matches nothing, and the router returns 404 (never
+403, which would leak that the id exists).
+
+### Why the real-DB cross-user RLS-denial test matters
+`backend/tests/test_subscriptions.py::test_cross_user_subscription_denied_by_rls` mints two real Supabase
+users, has user B insert a subscription through their own RLS-scoped connection, then asserts user A's
+RLS-scoped connection querying that id returns `None` (while B's own returns the row). This is the *only*
+test that would catch the catastrophic failure modes of the paragraph above — a missing transaction wrapper,
+a wrong claims shape, or a policy keyed on the wrong column — none of which a mocked test can see, because
+the bug lives in the database's evaluation of the policy, not in Python. RLS is the second security wall;
+this test is what proves the wall is actually standing. Look here: that test plus `backend/tests/test_rls.py`
+(the same pattern for `profiles`).
