@@ -8,7 +8,7 @@ from app.config import settings
 from app.db.pool import close_pool, create_pool
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import health, me
+from app.routers import analytics, health, me, subscriptions
 
 
 @asynccontextmanager
@@ -35,9 +35,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins_list,
     allow_credentials=False,
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(me.router, prefix="/api/v1")
+# Analytics before the subscriptions CRUD router so /subscriptions/analytics
+# resolves to the analytics route, not the /{sub_id} detail route.
+app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(subscriptions.router, prefix="/api/v1")

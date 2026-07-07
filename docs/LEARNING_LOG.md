@@ -345,3 +345,91 @@ first; only then does that number govern real throughput through your own provid
 real recipients (not just your own verified test address) also generally requires a verified sending
 domain. Deferred to a later session pending a domain purchase. Look here: prod Supabase project →
 Authentication → Rate Limits.
+
+---
+
+## Session 7 (2026-07-07) — Subscriptions API
+
+### RLS on a child table (generalizing the profiles pattern)
+`profiles` is one row per user, keyed on its own `id` (which *is* the user's auth id), so its RLS policies
+read `auth.uid() = id`. `subscriptions` is different: a user has *many* subscriptions, each with its own
+random `id`, and ownership lives in a separate `user_id` foreign key — so every policy keys on
+`auth.uid() = user_id` instead. Everything else transfers unchanged: `ENABLE ROW LEVEL SECURITY` plus four
+per-operation policies. The INSERT policy uses `WITH CHECK` (not `USING`) because there is no pre-existing
+row to filter — it validates the row being *written*, which is what stops a caller from inserting a row
+owned by someone else. `ON DELETE CASCADE` on the `user_id` FK means deleting a user auto-deletes all their
+subscriptions (part of the GDPR full-deletion story — no orphaned rows). Look here:
+`supabase/migrations/20260707113207_create_subscriptions_table.sql`.
+
+### Enums as CHECK constraints + Pydantic `Literal` (defense in depth)
+Instead of Postgres `ENUM` types (painful to `ALTER` later), the three enums (`category`, `billing_cycle`,
+`status`) are plain `TEXT` columns with a `CHECK (col IN (...))` constraint, and the *same* value sets are
+mirrored in Pydantic as `Literal[...]`. These are two independent walls enforcing the identical rule:
+Pydantic rejects bad input at the API boundary with a clean `422` before it touches the DB (fast, good UX);
+the DB CHECK is the backstop that catches anything bypassing the model or coming through a raw SQL path.
+Neither trusts the other — if the two lists ever drift, that's a bug. Pydantic field constraints add the
+rest of the contract: `Field(ge=0, max_digits=10, decimal_places=2)` on `price` mirrors `NUMERIC(10,2)` and
+`CHECK price >= 0`; `max_length` caps free-text `name`/`notes` (the TEXT columns are unbounded, so the
+backend — the trust boundary — bounds them); typing dates as `date` rejects malformed values at parse time.
+Look here: `backend/app/models/subscription.py` (the `Literal` aliases and `Annotated[..., Field(...)]`
+constraints), enforced against the CHECKs in the migration above.
+
+### Layered write path (router → service → db)
+Each layer has exactly one job, and nothing leaks across the boundary. The **router**
+(`app/routers/subscriptions.py`) speaks HTTP only: it parses/validates the request, calls a service, and
+maps results and `SubscriptionNotFoundError` to status codes — it never runs a query. The **service**
+(`app/services/subscription.py`) holds the business logic: the hybrid renewal-date rule, deciding when to
+recompute it on update, and orchestrating the connection. The **db** layer (`app/db/subscriptions.py`)
+holds *only* parameterized SQL and makes no decisions. Two payoffs of the split: the renewal rule is a
+pure function (`compute_next_renewal_date`) unit-testable with no DB or HTTP, and every value crosses into
+SQL as a bound `$n` parameter — the one thing that can't be bound, the `ORDER BY` column/direction, is
+validated against a fixed allowlist so a caller can't inject SQL through the sort. `user_id` is taken only
+from the JWT `sub` claim in the service, never from the request body (`SubscriptionCreate` has no such
+field), so a client can't write into another user's rows.
+
+### Why `rls_connection` transaction-scoping is the security boundary
+Every read and write in this session goes through `rls_connection(claims)` (`app/db/rls.py`), which opens a
+transaction and runs `set_config('request.jwt.claims', ..., is_local=true)` so the RLS policies' `auth.uid()`
+resolves to the caller. The `is_local=true` is the whole game: it only takes effect *inside* a transaction
+and is auto-reset when the transaction ends. Outside a transaction it silently no-ops — the query would then
+run under the pooled connection's default (superuser) role and **bypass RLS entirely**, returning every
+user's rows. Because it's transaction-scoped, a pooled connection handed to the next request can't leak the
+previous caller's identity. A subtle consequence for writes: the "get non-owner's row → 404" behavior isn't
+application code checking ownership — RLS filters the row out at the DB before the query returns, so
+`UPDATE`/`DELETE`/`SELECT` on someone else's id naturally matches nothing, and the router returns 404 (never
+403, which would leak that the id exists).
+
+### Why the real-DB cross-user RLS-denial test matters
+`backend/tests/test_subscriptions.py::test_cross_user_subscription_denied_by_rls` mints two real Supabase
+users, has user B insert a subscription through their own RLS-scoped connection, then asserts user A's
+RLS-scoped connection querying that id returns `None` (while B's own returns the row). This is the *only*
+test that would catch the catastrophic failure modes of the paragraph above — a missing transaction wrapper,
+a wrong claims shape, or a policy keyed on the wrong column — none of which a mocked test can see, because
+the bug lives in the database's evaluation of the policy, not in Python. RLS is the second security wall;
+this test is what proves the wall is actually standing. Look here: that test plus `backend/tests/test_rls.py`
+(the same pattern for `profiles`).
+
+### SQL aggregation vs. Python roll-up (and keeping the factor in one place)
+The analytics endpoint sums spend across subscriptions on different billing cycles, which first requires
+normalizing each to a monthly-equivalent (`weekly ×52/12`, `monthly ×1`, `quarterly ÷3`, `yearly ÷12`). Two
+competing pulls: doing sums in Postgres (`GROUP BY … SUM(price)`) is far more efficient than pulling every
+row into Python, but the normalization factor should exist in exactly one place — the pure, unit-tested
+`monthly_equivalent` helper — not duplicated as a SQL `CASE`. The resolution exploits that
+`monthly_equivalent` is *linear* in price: normalizing a summed bucket equals summing the per-row
+normalized values. So the DB groups by `(currency, category, billing_cycle)` and sums raw price
+(`app/db/analytics.py`), and the service applies the factor once per bucket (`app/services/analytics.py`) —
+grouping/summing in SQL, factor in Python, no duplication. Top-expenses is the exception: its sort key *is*
+the normalized value, so ranking happens in Python over the active rows rather than pushing a duplicate
+`CASE` into SQL. Money uses `Decimal` end to end (never float), rounded to 2 places only at the response
+boundary so intermediate divisions don't compound rounding error.
+
+### Per-currency grouping, not FX conversion (the honest choice)
+Totals come back as `{"EUR": 40.00, "USD": 25.00}` — grouped by currency, never converted into a single
+number. Converting would mean picking an exchange rate and baking a specific moment's rate into a stored
+"spend" figure that's silently wrong the next day, plus depending on an external FX feed (a new failure mode
+and, if it took user-supplied URLs, an SSRF surface). Reporting each currency's real, un-fudged total is the
+truthful thing to show and keeps this session self-contained. If cross-currency totals are ever wanted, that
+is a deliberate feature (live rates, a chosen display currency, disclosed as an estimate) — not a default
+this endpoint should fake. Also here: only `status = 'active'` rows contribute to any spend aggregate
+(cancelled/paused still show in the plain list, just not in the money math), and an empty portfolio returns
+well-formed empty dicts/lists rather than nulls or a crash. Look here: `app/services/analytics.py::build_overview`.
