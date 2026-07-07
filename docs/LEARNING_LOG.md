@@ -345,3 +345,31 @@ first; only then does that number govern real throughput through your own provid
 real recipients (not just your own verified test address) also generally requires a verified sending
 domain. Deferred to a later session pending a domain purchase. Look here: prod Supabase project →
 Authentication → Rate Limits.
+
+---
+
+## Session 7 (2026-07-07) — Subscriptions API
+
+### RLS on a child table (generalizing the profiles pattern)
+`profiles` is one row per user, keyed on its own `id` (which *is* the user's auth id), so its RLS policies
+read `auth.uid() = id`. `subscriptions` is different: a user has *many* subscriptions, each with its own
+random `id`, and ownership lives in a separate `user_id` foreign key — so every policy keys on
+`auth.uid() = user_id` instead. Everything else transfers unchanged: `ENABLE ROW LEVEL SECURITY` plus four
+per-operation policies. The INSERT policy uses `WITH CHECK` (not `USING`) because there is no pre-existing
+row to filter — it validates the row being *written*, which is what stops a caller from inserting a row
+owned by someone else. `ON DELETE CASCADE` on the `user_id` FK means deleting a user auto-deletes all their
+subscriptions (part of the GDPR full-deletion story — no orphaned rows). Look here:
+`supabase/migrations/20260707113207_create_subscriptions_table.sql`.
+
+### Enums as CHECK constraints + Pydantic `Literal` (defense in depth)
+Instead of Postgres `ENUM` types (painful to `ALTER` later), the three enums (`category`, `billing_cycle`,
+`status`) are plain `TEXT` columns with a `CHECK (col IN (...))` constraint, and the *same* value sets are
+mirrored in Pydantic as `Literal[...]`. These are two independent walls enforcing the identical rule:
+Pydantic rejects bad input at the API boundary with a clean `422` before it touches the DB (fast, good UX);
+the DB CHECK is the backstop that catches anything bypassing the model or coming through a raw SQL path.
+Neither trusts the other — if the two lists ever drift, that's a bug. Pydantic field constraints add the
+rest of the contract: `Field(ge=0, max_digits=10, decimal_places=2)` on `price` mirrors `NUMERIC(10,2)` and
+`CHECK price >= 0`; `max_length` caps free-text `name`/`notes` (the TEXT columns are unbounded, so the
+backend — the trust boundary — bounds them); typing dates as `date` rejects malformed values at parse time.
+Look here: `backend/app/models/subscription.py` (the `Literal` aliases and `Annotated[..., Field(...)]`
+constraints), enforced against the CHECKs in the migration above.
