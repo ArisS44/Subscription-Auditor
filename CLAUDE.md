@@ -105,4 +105,21 @@ Apply the **Secure** and **Private & compliant** non-negotiables above. Always-o
 - Base branch: `main` (deployable). One feature branch per dispatch unit off `main`; a batch of sequential Tasks for one Worker shares a branch. Branch names are `type/short-description` (`feat/`, `fix/`, `chore/`, `docs/`, `refactor/`, `test/`) describing the actual work — no APM identifiers in branch or commit names.
 - Commits follow Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`); commit often. Do not commit build artifacts or generated files. Never push to the remote unless explicitly required (e.g. CI/CD deploy triggers) or asked.
 
+## Frontend conventions (any Task building UI)
+
+- **Server state via TanStack Query only** — never raw `useEffect` + `fetch` for data fetching/mutation. Follow the existing hook pattern in `src/hooks/useMe.ts`; all backend calls go through `src/lib/api.ts::apiFetch` with the session access token.
+- **Every user-facing string is i18n-keyed in both `en` and `el`** (`src/i18n/locales/`) — no hardcoded copy. Numbers, dates, and currencies are formatted with the `Intl` API keyed to the active language (never hand-rolled formatting).
+- **New shadcn/ui components use the Base UI preset** (`render`-prop API), not Radix — match the project's established shadcn setup.
+- Dark mode is the default and primary design target; forms use `react-hook-form` + `zod` (Zod is UX-only validation — the backend re-validates).
+
+## UX collaboration (any Task making visual/aesthetic choices)
+
+- **Structural UX** (page vs modal, table vs cards, which views are functional) is fixed by the Task's requirements — implement as specified.
+- **Visual/aesthetic UX** (layout, navigation style, chart type, color/styling, arrangement, empty-state look, micro-copy) is **decided interactively with the User.** Build in small increments and, at each meaningful visual choice, **pause and present the User concrete options** — 2–3 alternatives, a quick mockup/sketch, or a rendered increment to look at — and let them choose before proceeding. Do not settle aesthetics unilaterally. Use the `dataviz` and `artifact-design` skills to generate strong options to choose between.
+- **Avoid the generic "AI-generated" look.** Steer clear of the tells — sparkle/✨ motifs and decorative gradient hero blobs, oversized centered empty-state heroes, redundant labels (a card title repeating the page heading), emoji as UI chrome, purple-gradient defaults, and filler copy. Prefer restrained, purposeful, real-product styling: use each surface's own domain icon over decorative ones, keep empty/placeholder states understated, and don't add ornament that carries no information. When in doubt, less chrome.
+
+## Per-user isolation testing (any Task adding a user-scoped table)
+
+- When introducing a table scoped by `user_id`, prove isolation with a **real-DB cross-user RLS-denial test** (a second user cannot read or modify the first user's rows), following the existing pattern in `backend/tests/test_rls.py`. This is not optional — RLS is the second security wall and must be verified, not assumed.
+
 } //APM_RULES
