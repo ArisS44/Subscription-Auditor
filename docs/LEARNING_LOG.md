@@ -408,3 +408,28 @@ a wrong claims shape, or a policy keyed on the wrong column — none of which a 
 the bug lives in the database's evaluation of the policy, not in Python. RLS is the second security wall;
 this test is what proves the wall is actually standing. Look here: that test plus `backend/tests/test_rls.py`
 (the same pattern for `profiles`).
+
+### SQL aggregation vs. Python roll-up (and keeping the factor in one place)
+The analytics endpoint sums spend across subscriptions on different billing cycles, which first requires
+normalizing each to a monthly-equivalent (`weekly ×52/12`, `monthly ×1`, `quarterly ÷3`, `yearly ÷12`). Two
+competing pulls: doing sums in Postgres (`GROUP BY … SUM(price)`) is far more efficient than pulling every
+row into Python, but the normalization factor should exist in exactly one place — the pure, unit-tested
+`monthly_equivalent` helper — not duplicated as a SQL `CASE`. The resolution exploits that
+`monthly_equivalent` is *linear* in price: normalizing a summed bucket equals summing the per-row
+normalized values. So the DB groups by `(currency, category, billing_cycle)` and sums raw price
+(`app/db/analytics.py`), and the service applies the factor once per bucket (`app/services/analytics.py`) —
+grouping/summing in SQL, factor in Python, no duplication. Top-expenses is the exception: its sort key *is*
+the normalized value, so ranking happens in Python over the active rows rather than pushing a duplicate
+`CASE` into SQL. Money uses `Decimal` end to end (never float), rounded to 2 places only at the response
+boundary so intermediate divisions don't compound rounding error.
+
+### Per-currency grouping, not FX conversion (the honest choice)
+Totals come back as `{"EUR": 40.00, "USD": 25.00}` — grouped by currency, never converted into a single
+number. Converting would mean picking an exchange rate and baking a specific moment's rate into a stored
+"spend" figure that's silently wrong the next day, plus depending on an external FX feed (a new failure mode
+and, if it took user-supplied URLs, an SSRF surface). Reporting each currency's real, un-fudged total is the
+truthful thing to show and keeps this session self-contained. If cross-currency totals are ever wanted, that
+is a deliberate feature (live rates, a chosen display currency, disclosed as an estimate) — not a default
+this endpoint should fake. Also here: only `status = 'active'` rows contribute to any spend aggregate
+(cancelled/paused still show in the plain list, just not in the money math), and an empty portfolio returns
+well-formed empty dicts/lists rather than nulls or a crash. Look here: `app/services/analytics.py::build_overview`.
