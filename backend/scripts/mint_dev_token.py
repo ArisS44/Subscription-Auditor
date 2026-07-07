@@ -10,11 +10,17 @@ the dashboard if you like, or leave it — it's harmless.
 """
 
 import asyncio
+import sys
 import uuid
+from pathlib import Path
 
 import httpx
 
-from app.config import settings
+# Allow running as `python scripts/mint_dev_token.py` from the backend dir:
+# put the backend root (this file's parent's parent) on the import path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.config import settings  # noqa: E402
 
 _ADMIN_HEADERS = {
     "apikey": settings.supabase_service_role_key,
