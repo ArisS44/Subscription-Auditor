@@ -6,7 +6,61 @@
   },
   "dashboard": {
     "title": "Dashboard",
-    "placeholder": "Your subscriptions will appear here."
+    "brand": "Auditor",
+    "nav": {
+      "overview": "Overview",
+      "subscriptions": "Subscriptions",
+      "reports": "Reports",
+      "chat": "Chat",
+      "settings": "Settings"
+    },
+    "overview": {
+      "title": "Overview",
+      "placeholder": "Your spending summary will appear here."
+    },
+    "subscriptions": {
+      "title": "Subscriptions",
+      "placeholder": "Your subscriptions will appear here."
+    },
+    "detail": {
+      "title": "Subscription details",
+      "placeholder": "Details for this subscription will appear here.",
+      "back": "Back to subscriptions"
+    },
+    "settings": {
+      "title": "Settings",
+      "placeholder": "Account settings will appear here."
+    },
+    "comingSoon": {
+      "badge": "Coming soon",
+      "reports": "Reports and monthly insights will live here in a future update.",
+      "chat": "The bilingual AI assistant will live here in a future update."
+    },
+    "language": {
+      "label": "Language",
+      "en": "EN",
+      "el": "GR"
+    },
+    "logoutDialog": {
+      "title": "Log out?",
+      "description": "You'll need to sign in again to get back to your dashboard.",
+      "confirm": "Log out",
+      "cancel": "Cancel"
+    },
+    "switchDialog": {
+      "title": "Switch account?",
+      "description": "This signs you out of {{email}} and opens the login screen so you can sign in with a different account.",
+      "confirm": "Switch account",
+      "cancel": "Cancel"
+    },
+    "sidebar": {
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar"
+    },
+    "account": {
+      "signedInAs": "Signed in as",
+      "switch": "Switch account"
+    }
   },
   "nav": {
     "home": "Home",

@@ -433,3 +433,34 @@ is a deliberate feature (live rates, a chosen display currency, disclosed as an 
 this endpoint should fake. Also here: only `status = 'active'` rows contribute to any spend aggregate
 (cancelled/paused still show in the plain list, just not in the money math), and an empty portfolio returns
 well-formed empty dicts/lists rather than nulls or a crash. Look here: `app/services/analytics.py::build_overview`.
+
+## Session 8 (2026-07-07) — Dashboard Shell & Data Hooks
+
+### Layout routes + nested routes (React Router) — a persistent shell
+The dashboard needs a sidebar/header that stays put while only the inner content changes between tabs. A
+flat route map can't express that without wrapping every page in `<Shell>…</Shell>` (duplicated, and the
+shell remounts on each navigation, losing its state). The router's answer is a **layout route**: a parent
+`<Route path="/dashboard" element={<DashboardShell/>}>` whose element renders an **`<Outlet/>`** where child
+content should appear, with **child routes declared nested inside it** (`index` → Overview, `subscriptions`,
+`subscriptions/:id`, `settings`, …). On navigation only the `<Outlet/>` subtree re-renders; the shell (and
+its state — e.g. the collapsed/expanded sidebar) persists. Two details that matter: the guard wraps the
+layout element (`element={<ProtectedRoute><DashboardShell/></ProtectedRoute>}`), so auth covers the whole
+subtree in one place; and the index child uses `end` on its `NavLink` so "Overview" is only highlighted on an
+exact match, not for every nested path. (The Task brief said "v6"; the project is on react-router v7, where
+this API is identical.) Look here: `src/App.tsx` (the nested `<Route>` block) and
+`src/features/dashboard/DashboardShell.tsx` (the `<Outlet/>`).
+
+### Adding server-state for a new resource with TanStack Query (keys + prefix invalidation)
+Every backend resource follows one shape: a `useQuery` per read, keyed on its inputs and gated with
+`enabled: Boolean(accessToken)` (so it doesn't fire before login), all calling through `lib/api.ts::apiFetch`
+which attaches the Bearer token — never a raw `useEffect`+`fetch`. The design lever is the **query-key
+namespace**: every subscriptions/analytics key starts with `['subscriptions', …]`, and each write mutation's
+`onSuccess` calls `invalidateQueries({ queryKey: ['subscriptions'] })`. Because TanStack matches keys by
+prefix, that one line refreshes the list, any open detail, *and* the analytics roll-up at once — so creating,
+editing, cancelling, or deleting a subscription updates the whole UI with no manual refetch. Changing a
+filter/sort is just a different key (`['subscriptions','list', params, token]`), which refetches
+automatically. One correctness note learned by hitting the live API: money fields come back as **JSON
+strings** (Pydantic serializes `Decimal` to a string to preserve precision), so the hook types declare
+`price`/`monthly_equivalent` as `string` and pass them through untouched — conversion to a number happens
+only at display/format time. Look here: `src/hooks/useSubscriptions.ts` and `src/hooks/useAnalytics.ts`
+(pattern anchored on the existing `src/hooks/useMe.ts`).
