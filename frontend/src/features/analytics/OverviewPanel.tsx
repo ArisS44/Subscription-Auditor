@@ -75,6 +75,7 @@ export function OverviewPanel() {
   const [chartPage, setChartPage] = useState(1);
   const [renewalsPage, setRenewalsPage] = useState(1);
   const [expensesPage, setExpensesPage] = useState(1);
+  const [expensesCurrency, setExpensesCurrency] = useState<string>(ALL);
 
   if (isLoading) {
     return <StateCard>{t('hello.loading')}</StateCard>;
@@ -106,8 +107,14 @@ export function OverviewPanel() {
     renewalsPage,
     LIST_PAGE_SIZE,
   );
+  // Top expenses can be filtered to a single currency (each item already carries
+  // its own currency); "All" passes the full, correctly per-currency-ranked list.
+  const filteredExpenses =
+    expensesCurrency === ALL
+      ? data.top_expenses
+      : data.top_expenses.filter((e) => e.currency === expensesCurrency);
   const { visible: expenses, pageCount: expensePages } = paginate(
-    data.top_expenses,
+    filteredExpenses,
     expensesPage,
     LIST_PAGE_SIZE,
   );
@@ -257,14 +264,37 @@ export function OverviewPanel() {
 
           {/* Top expenses (monthly-equivalent, per currency). */}
           <Card>
-            <CardHeader className="space-y-0">
+            <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="size-4 text-muted-foreground" aria-hidden />
                 {t('overview.topExpenses')}
               </CardTitle>
+              {currencies.length > 1 && (
+                <Select
+                  value={expensesCurrency}
+                  onValueChange={(v) => {
+                    setExpensesCurrency(v ?? ALL);
+                    setExpensesPage(1);
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-auto">
+                    <SelectValue>
+                      {(v: string) => (v === ALL ? t('overview.currency.all') : v)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL}>{t('overview.currency.all')}</SelectItem>
+                    {currencies.map((cur) => (
+                      <SelectItem key={cur} value={cur}>
+                        {cur}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </CardHeader>
             <CardContent>
-              {data.top_expenses.length === 0 ? (
+              {filteredExpenses.length === 0 ? (
                 <p className="py-2 text-sm text-muted-foreground">{t('overview.noExpenses')}</p>
               ) : (
                 <div className="flex flex-col gap-3">
