@@ -5,21 +5,33 @@
 
 ---
 
-## 2026-07-08 — Currency conversion deferred, not built in Session 2
+## 2026-07-08 — Live currency conversion: scoped as an opt-in fast-follow after Session 2's deploy
 
-**Decision:** While reviewing the Session-2 Overview tab, the User asked for a "convert everything to one
-currency" view. This was declined for this session and not built — per-currency totals + a single-currency
-filter were shipped instead (see `frontend/src/features/analytics/OverviewPanel.tsx`).
+**Decision:** Session 2 ships with **no live FX conversion** — per-currency grouping (never converted) stays
+the design for everything built in this session, including the Stage 1.4 fix that ranks top expenses fairly
+*within* each currency. Real FX conversion is confirmed as real, wanted scope, but explicitly scheduled as a
+**fast-follow once Session 2's Stage 3 (prod migration + deploy) is live and verified** — not folded into the
+current deploy.
 
-**Why:** the app's Money Aggregation Semantics for Session 2 are explicit — currencies are grouped, never
-converted, with no FX rates and no external FX API. Real conversion needs a live/periodically-updated FX rate
-source (a new external dependency), a decision on which rate snapshot to use for historical accuracy, and
-UI to disclose that a conversion is an estimate — none of that was scoped or built this session.
+When built, the shape is: **no default single-currency view anywhere** — every existing per-currency display
+(burn, annualized, category spend, native top-expenses ranking) stays exactly as-is, permanently. On top of
+that, add an **opt-in** "convert to [currency]" control in Overview, letting the User pick a target currency
+to (a) see converted comparison totals and (b) compare top expenses fairly across currencies — clearly labeled
+as an estimate, never silently blending into the real per-currency figures.
 
-**How to apply:** treat "multi-currency conversion" as a real, distinct future feature — likely its own small
-scope (an FX-rate integration + a documented rounding/staleness policy), not a two-line addition to Overview.
-When picking it up, revisit `docs/APP_DESCRIPTION.md` and this file together before committing to an approach,
-and update the Session-2 Spec's "no FX conversion" language once it's superseded.
+**Why:** matches the app's financial-honesty stance (never silently convert) while giving the User the
+comparison view they actually want. Doing it after Stage 3 deploys means the already-verified Session-2 slice
+ships on schedule, and FX work — a live external rate source, a caching/staleness strategy that doesn't need a
+scheduler (avoid entangling with the pre-Session-5 scheduler single-ownership question), and a new small
+`fx_rates`-style table/migration — gets scoped properly rather than rushed into the current deploy.
+
+**How to apply:** when picking this up, design as: (1) a backend FX-rate fetch+cache layer against a reliable,
+free, no-key source (e.g. Frankfurter/ECB-based rates) with a staleness TTL, no scheduler required (fetch
+lazily when the cached rate is stale); (2) apply the conversion only at the point the User opts in — top
+expenses' native per-currency ranking (Task 1.4) is unaffected and stays the default; (3) an Overview
+currency-picker control that shows converted totals/top-expenses labeled as an estimate. Revisit
+`docs/APP_DESCRIPTION.md` and this file together before committing to the exact approach, and update the
+Session-2 Spec's "no FX conversion" language once this fast-follow actually starts.
 
 ---
 
