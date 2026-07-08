@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-07-08 — Currency conversion deferred, not built in Session 2
+
+**Decision:** While reviewing the Session-2 Overview tab, the User asked for a "convert everything to one
+currency" view. This was declined for this session and not built — per-currency totals + a single-currency
+filter were shipped instead (see `frontend/src/features/analytics/OverviewPanel.tsx`).
+
+**Why:** the app's Money Aggregation Semantics for Session 2 are explicit — currencies are grouped, never
+converted, with no FX rates and no external FX API. Real conversion needs a live/periodically-updated FX rate
+source (a new external dependency), a decision on which rate snapshot to use for historical accuracy, and
+UI to disclose that a conversion is an estimate — none of that was scoped or built this session.
+
+**How to apply:** treat "multi-currency conversion" as a real, distinct future feature — likely its own small
+scope (an FX-rate integration + a documented rounding/staleness policy), not a two-line addition to Overview.
+When picking it up, revisit `docs/APP_DESCRIPTION.md` and this file together before committing to an approach,
+and update the Session-2 Spec's "no FX conversion" language once it's superseded.
+
+---
+
 ## 2026-07-04 — Minimal schema for Session 1 (profiles only)
 
 **Decision:** The first Supabase migration (`supabase/migrations/20260704152946_create_profiles_table.sql`)
