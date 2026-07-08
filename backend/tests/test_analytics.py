@@ -142,6 +142,57 @@ def test_top_expenses_sorted_desc_and_capped(test_client, user_a):
     assert 5.00 not in amounts  # the smallest fell off the top 5
 
 
+def test_top_expenses_ranked_per_currency_not_across(test_client, user_a):
+    _, token = user_a
+    # A JPY subscription that is numerically far larger than any EUR one. Under the
+    # old global ranking it would dominate the flat top-5 and could crowd genuine
+    # EUR top items out entirely. Per-currency, each currency keeps its own top list.
+    test_client.post(
+        BASE, headers=_auth(token), json=_payload(name="JPY-big", currency="JPY", price="3000.00")
+    )
+    test_client.post(
+        BASE, headers=_auth(token), json=_payload(name="EUR-top", currency="EUR", price="50.00")
+    )
+    test_client.post(
+        BASE, headers=_auth(token), json=_payload(name="EUR-low", currency="EUR", price="8.00")
+    )
+
+    body = test_client.get(ANALYTICS, headers=_auth(token)).json()
+    top = body["top_expenses"]
+    by_currency: dict[str, list] = {}
+    for e in top:
+        by_currency.setdefault(e["currency"], []).append(e)
+
+    # Both currencies are represented — the large JPY item did not evict the EUR ones.
+    assert set(by_currency) == {"EUR", "JPY"}
+    assert [e["name"] for e in by_currency["JPY"]] == ["JPY-big"]
+    # EUR ranked within its own currency, amount desc.
+    eur_names = [e["name"] for e in by_currency["EUR"]]
+    assert eur_names == ["EUR-top", "EUR-low"]
+
+
+def test_top_expenses_capped_per_currency(test_client, user_a):
+    _, token = user_a
+    # 6 EUR + 6 JPY active subs: expect top 5 within *each* currency (10 total),
+    # not a flat top-5 across the whole portfolio.
+    for i, price in enumerate(["5.00", "60.00", "10.00", "30.00", "20.00", "50.00"]):
+        test_client.post(
+            BASE, headers=_auth(token), json=_payload(name=f"E{i}", currency="EUR", price=price)
+        )
+    for i, price in enumerate(["7.00", "70.00", "17.00", "37.00", "27.00", "57.00"]):
+        test_client.post(
+            BASE, headers=_auth(token), json=_payload(name=f"J{i}", currency="JPY", price=price)
+        )
+
+    body = test_client.get(ANALYTICS, headers=_auth(token)).json()
+    top = body["top_expenses"]
+    eur = [float(e["monthly_equivalent"]) for e in top if e["currency"] == "EUR"]
+    jpy = [float(e["monthly_equivalent"]) for e in top if e["currency"] == "JPY"]
+    assert len(eur) == 5 and len(jpy) == 5  # capped per currency, 10 total
+    assert eur == sorted(eur, reverse=True) and jpy == sorted(jpy, reverse=True)
+    assert 5.00 not in eur and 7.00 not in jpy  # smallest in each currency fell off
+
+
 def test_upcoming_renewals_within_30_days_only(test_client, user_a):
     _, token = user_a
     today = date.today()

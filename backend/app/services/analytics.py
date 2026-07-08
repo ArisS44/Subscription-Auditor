@@ -75,20 +75,32 @@ async def build_overview(claims: dict) -> dict:
     ]
 
     # Top expenses: rank each active subscription by its monthly-equivalent (same
-    # helper). Done in Python because the sort key is that factor. Deterministic:
-    # amount desc, then name asc.
-    ranked = sorted(
-        (
+    # helper). Done in Python because the sort key is that factor. Ranking is
+    # per-currency — like every other figure here, currencies are never mixed:
+    # comparing a raw ¥3000 against a €50 by magnitude alone is meaningless. So we
+    # bucket candidates by currency, take the top TOP_EXPENSES_LIMIT within each
+    # bucket (amount desc, then name asc), and concatenate. A portfolio with N
+    # active currencies can therefore surface up to TOP_EXPENSES_LIMIT * N items.
+    # The final list is sorted by (currency, amount desc, name) for deterministic,
+    # stable output; it stays a flat list — the frontend paginates it generically.
+    candidates_by_currency: dict[str, list[dict]] = defaultdict(list)
+    for r in active_rows:
+        candidates_by_currency[r["currency"]].append(
             {
                 "id": r["id"],
                 "name": r["name"],
                 "currency": r["currency"],
                 "monthly_equivalent": _money(monthly_equivalent(r["price"], r["billing_cycle"])),
             }
-            for r in active_rows
-        ),
-        key=lambda e: (-e["monthly_equivalent"], e["name"]),
-    )[:TOP_EXPENSES_LIMIT]
+        )
+
+    ranked: list[dict] = []
+    for currency in sorted(candidates_by_currency):
+        top_for_currency = sorted(
+            candidates_by_currency[currency],
+            key=lambda e: (-e["monthly_equivalent"], e["name"]),
+        )[:TOP_EXPENSES_LIMIT]
+        ranked.extend(top_for_currency)
 
     return {
         "monthly_burn_by_currency": monthly_burn,
