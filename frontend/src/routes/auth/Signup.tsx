@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { AuthBrand } from '@/features/auth/AuthBrand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +31,7 @@ function Signup() {
   if (confirmationSentTo) {
     return (
       <div className="flex min-h-svh flex-col items-center justify-center gap-2 bg-background px-4 text-center text-foreground">
+        <AuthBrand />
         <h1 className="text-2xl font-semibold">{t('auth.signup.checkEmailTitle')}</h1>
         <p className="max-w-sm text-muted-foreground">
           {t('auth.signup.checkEmailBody', { email: confirmationSentTo })}
@@ -40,6 +42,7 @@ function Signup() {
 
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background px-4 text-foreground">
+      <AuthBrand />
       <h1 className="text-2xl font-semibold">{t('auth.signup.title')}</h1>
       <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
         <div className="flex flex-col gap-1.5">

@@ -433,3 +433,95 @@ is a deliberate feature (live rates, a chosen display currency, disclosed as an 
 this endpoint should fake. Also here: only `status = 'active'` rows contribute to any spend aggregate
 (cancelled/paused still show in the plain list, just not in the money math), and an empty portfolio returns
 well-formed empty dicts/lists rather than nulls or a crash. Look here: `app/services/analytics.py::build_overview`.
+
+## Session 8 (2026-07-07) — Dashboard Shell & Data Hooks
+
+### Layout routes + nested routes (React Router) — a persistent shell
+The dashboard needs a sidebar/header that stays put while only the inner content changes between tabs. A
+flat route map can't express that without wrapping every page in `<Shell>…</Shell>` (duplicated, and the
+shell remounts on each navigation, losing its state). The router's answer is a **layout route**: a parent
+`<Route path="/dashboard" element={<DashboardShell/>}>` whose element renders an **`<Outlet/>`** where child
+content should appear, with **child routes declared nested inside it** (`index` → Overview, `subscriptions`,
+`subscriptions/:id`, `settings`, …). On navigation only the `<Outlet/>` subtree re-renders; the shell (and
+its state — e.g. the collapsed/expanded sidebar) persists. Two details that matter: the guard wraps the
+layout element (`element={<ProtectedRoute><DashboardShell/></ProtectedRoute>}`), so auth covers the whole
+subtree in one place; and the index child uses `end` on its `NavLink` so "Overview" is only highlighted on an
+exact match, not for every nested path. (The Task brief said "v6"; the project is on react-router v7, where
+this API is identical.) Look here: `src/App.tsx` (the nested `<Route>` block) and
+`src/features/dashboard/DashboardShell.tsx` (the `<Outlet/>`).
+
+### Adding server-state for a new resource with TanStack Query (keys + prefix invalidation)
+Every backend resource follows one shape: a `useQuery` per read, keyed on its inputs and gated with
+`enabled: Boolean(accessToken)` (so it doesn't fire before login), all calling through `lib/api.ts::apiFetch`
+which attaches the Bearer token — never a raw `useEffect`+`fetch`. The design lever is the **query-key
+namespace**: every subscriptions/analytics key starts with `['subscriptions', …]`, and each write mutation's
+`onSuccess` calls `invalidateQueries({ queryKey: ['subscriptions'] })`. Because TanStack matches keys by
+prefix, that one line refreshes the list, any open detail, *and* the analytics roll-up at once — so creating,
+editing, cancelling, or deleting a subscription updates the whole UI with no manual refetch. Changing a
+filter/sort is just a different key (`['subscriptions','list', params, token]`), which refetches
+automatically. One correctness note learned by hitting the live API: money fields come back as **JSON
+strings** (Pydantic serializes `Decimal` to a string to preserve precision), so the hook types declare
+`price`/`monthly_equivalent` as `string` and pass them through untouched — conversion to a number happens
+only at display/format time. Look here: `src/hooks/useSubscriptions.ts` and `src/hooks/useAnalytics.ts`
+(pattern anchored on the existing `src/hooks/useMe.ts`).
+
+## Session 9 (2026-07-08) — Subscription CRUD UI
+
+### react-hook-form + Zod without a generated `<Form>` wrapper
+A typical shadcn setup ships a `<Form>`/`<FormField>` component that hides the form wiring; this Base UI
+"nova" preset doesn't, so the two libraries are wired directly — which is clearer about who does what.
+**react-hook-form** owns form state (values, touched/dirty, errors) mostly *uncontrolled* (reads inputs via
+refs), so typing doesn't re-render the whole form. **Zod** is the schema — one object describing the rules,
+which also infers the TS type of the values (`z.infer`). **`@hookform/resolvers/zod`** bridges them:
+`resolver: zodResolver(schema)` makes RHF validate with Zod and drop each message on the right field. Plain
+inputs use `{...register('name')}`; components without a native ref (the Base UI `Select`, the custom
+`DatePicker`) use `<Controller>` and get `value`/`onChange` wired manually. The `field` primitives
+(`Field`/`FieldLabel`/`FieldError`) are just presentation — `FieldError` takes an `errors` array, so RHF's
+per-field error feeds straight in. Two project-specific wrinkles: the Zod messages are produced by a
+*factory* `createSubscriptionSchema(t)` so they're i18n-keyed (and a test passes an identity `t`); and the
+schema is **UX-only** — the FastAPI/Pydantic backend re-validates and is the real trust boundary, so the
+schema mirrors the backend constraints rather than replacing them. Look here:
+`src/features/subscriptions/subscription-schema.ts` and `SubscriptionFormDialog.tsx`.
+
+### The Base UI `Dialog` as a modal (form host and confirmations)
+`Dialog` is controlled (`open`/`onOpenChange`) and portals its content above the page via
+`DialogContent`. One `SubscriptionFormDialog` instance serves both create and edit — pass a subscription to
+edit (pre-filled, PATCH) or omit it to add (blank, POST) — with `reset()` in an effect repopulating on open.
+A subtlety worth noting: a Base UI menu item that opens a dialog can fight over focus, and Base UI
+*group-label* parts (`SelectLabel`/`DropdownMenuLabel`) throw if used without a surrounding `Group` — so a
+plain styled element is used for non-interactive menu headers. The confirmation flows (cancel, delete, and
+the reversible pause/resume/reactivate) all reuse one generic `ConfirmDialog`, driven by a small piece of
+state, rather than a bespoke dialog each. Native `<input type="date">` was replaced by a `DatePicker`
+(Popover + the design-system Calendar) so the picker matches the app's theme, shows DD/MM/YYYY, and
+localizes month/day names — parsing/serializing as *local* dates to avoid the UTC off-by-one. Look here:
+`src/features/subscriptions/SubscriptionFormDialog.tsx`, `DatePicker.tsx`, and
+`src/features/dashboard/ConfirmDialog.tsx`.
+
+## Session 10 (2026-07-08) — Overview charts (Recharts), Intl & Settings
+
+### Recharts fundamentals (first chart in the project)
+Recharts is *declarative* SVG charting: you compose a chart from React components — `<BarChart>`/`<PieChart>`
+holding `<Bar>`/`<Pie>`, `<XAxis>`/`<YAxis>`, `<Tooltip>`, `<Legend>` — wrapped in a `<ResponsiveContainer>`
+that sizes it to its parent. You hand `<Bar dataKey="amount">` an array of objects and it draws them; a
+`<Cell fill=…>` per datum gives each bar/slice its own colour. `CategorySpendChart` is built standalone
+(one reusable component, three render modes: horizontal bar / vertical column / donut) so it can be reused
+for in-chat charts later. Colour decisions followed the **dataviz** method: category is an *identity*, so a
+CVD-validated categorical palette (validated with the skill's script in both light and dark, `run` = pass),
+wired through the design system's `--chart-1..5` CSS vars (which were grayscale placeholders) so a category
+keeps the same hue across chart types and both themes. The tooltip is a custom themed component (Recharts'
+default is light-only). Honesty constraint carried from the backend: one currency per chart — money is never
+converted, so different currencies are never put on one value axis (the "All" view is small multiples, one
+chart per currency, paginated). Look here: `src/features/analytics/CategorySpendChart.tsx`,
+`category-colors.ts`, and the `--chart-*` vars in `src/index.css`.
+
+### Intl for locale-correct money & dates (never hand-roll)
+Every number, currency, and date goes through the browser's built-in `Intl`, keyed to the active i18n
+language — never manual string building. `Intl.NumberFormat(lang, {style:'currency', currency})` renders
+`$15.99` vs `15,99 €` with the right symbol, placement, separators, and per-currency decimal rules (e.g.
+JPY shows no decimals) automatically; `Intl.DateTimeFormat(lang, {dateStyle:'medium'})` localizes month
+names (English vs Greek). The API sends money as strings (Decimal-as-string), so the helpers take
+`string | number` and `Number(...)` once, at format time. Centralized in `src/lib/format.ts` and reused by
+the list, detail, and Overview. The Settings form (react-hook-form + Zod on the `field` primitives — same
+recipe as the subscription form) writes `display_name`/`preferred_language` via a new `useUpdateProfile`
+`PATCH /me` mutation that invalidates `['me']`; choosing English/Greek also applies the language live.
+Look here: `src/lib/format.ts`, `src/features/settings/SettingsPanel.tsx`, `src/hooks/useMe.ts`.
