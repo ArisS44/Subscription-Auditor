@@ -496,3 +496,32 @@ state, rather than a bespoke dialog each. Native `<input type="date">` was repla
 localizes month/day names — parsing/serializing as *local* dates to avoid the UTC off-by-one. Look here:
 `src/features/subscriptions/SubscriptionFormDialog.tsx`, `DatePicker.tsx`, and
 `src/features/dashboard/ConfirmDialog.tsx`.
+
+## Session 10 (2026-07-08) — Overview charts (Recharts), Intl & Settings
+
+### Recharts fundamentals (first chart in the project)
+Recharts is *declarative* SVG charting: you compose a chart from React components — `<BarChart>`/`<PieChart>`
+holding `<Bar>`/`<Pie>`, `<XAxis>`/`<YAxis>`, `<Tooltip>`, `<Legend>` — wrapped in a `<ResponsiveContainer>`
+that sizes it to its parent. You hand `<Bar dataKey="amount">` an array of objects and it draws them; a
+`<Cell fill=…>` per datum gives each bar/slice its own colour. `CategorySpendChart` is built standalone
+(one reusable component, three render modes: horizontal bar / vertical column / donut) so it can be reused
+for in-chat charts later. Colour decisions followed the **dataviz** method: category is an *identity*, so a
+CVD-validated categorical palette (validated with the skill's script in both light and dark, `run` = pass),
+wired through the design system's `--chart-1..5` CSS vars (which were grayscale placeholders) so a category
+keeps the same hue across chart types and both themes. The tooltip is a custom themed component (Recharts'
+default is light-only). Honesty constraint carried from the backend: one currency per chart — money is never
+converted, so different currencies are never put on one value axis (the "All" view is small multiples, one
+chart per currency, paginated). Look here: `src/features/analytics/CategorySpendChart.tsx`,
+`category-colors.ts`, and the `--chart-*` vars in `src/index.css`.
+
+### Intl for locale-correct money & dates (never hand-roll)
+Every number, currency, and date goes through the browser's built-in `Intl`, keyed to the active i18n
+language — never manual string building. `Intl.NumberFormat(lang, {style:'currency', currency})` renders
+`$15.99` vs `15,99 €` with the right symbol, placement, separators, and per-currency decimal rules (e.g.
+JPY shows no decimals) automatically; `Intl.DateTimeFormat(lang, {dateStyle:'medium'})` localizes month
+names (English vs Greek). The API sends money as strings (Decimal-as-string), so the helpers take
+`string | number` and `Number(...)` once, at format time. Centralized in `src/lib/format.ts` and reused by
+the list, detail, and Overview. The Settings form (react-hook-form + Zod on the `field` primitives — same
+recipe as the subscription form) writes `display_name`/`preferred_language` via a new `useUpdateProfile`
+`PATCH /me` mutation that invalidates `['me']`; choosing English/Greek also applies the language live.
+Look here: `src/lib/format.ts`, `src/features/settings/SettingsPanel.tsx`, `src/hooks/useMe.ts`.

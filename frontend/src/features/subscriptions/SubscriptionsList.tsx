@@ -29,11 +29,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Pagination } from '@/components/ui/pagination';
 import { CATEGORIES } from './subscription-schema';
 import { perPeriodPrice, statusBadgeVariant } from './display';
 import { SubscriptionRowActions } from './SubscriptionRowActions';
 import { SubscriptionFormDialog } from './SubscriptionFormDialog';
 
+const PAGE_SIZE = 10;
 const STATUSES: readonly SubscriptionStatus[] = ['active', 'paused', 'cancelled'];
 const SORT_FIELDS: readonly NonNullable<SubscriptionListParams['sort_by']>[] = [
   'created_at',
@@ -60,20 +62,26 @@ export function SubscriptionsList() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Subscription | undefined>(undefined);
+  const [page, setPage] = useState(1);
 
+  // Filter/sort changes shrink or reorder the result set — go back to page 1 so
+  // we never sit on a page that no longer exists. Reset happens in the change
+  // handlers below (not an effect) to avoid a cascading-render setState.
   const params: SubscriptionListParams = useMemo(
     () => ({
       status: status === ALL ? undefined : status,
       category: category === ALL ? undefined : category,
       sort_by: sortBy,
       order,
-      limit: 100,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
     }),
-    [status, category, sortBy, order],
+    [status, category, sortBy, order, page],
   );
 
   const { data, isLoading, isError } = useSubscriptions(accessToken, params);
   const items = data?.items ?? [];
+  const pageCount = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
   const hasFilters = status !== ALL || category !== ALL;
 
   function openAdd() {
@@ -108,7 +116,10 @@ export function SubscriptionsList() {
       <div className="flex flex-wrap items-center gap-2">
         <Select
           value={status}
-          onValueChange={(v) => setStatus(v as SubscriptionStatus | typeof ALL)}
+          onValueChange={(v) => {
+            setStatus(v as SubscriptionStatus | typeof ALL);
+            setPage(1);
+          }}
         >
           <SelectTrigger className="w-48">
             <SelectValue>
@@ -129,7 +140,13 @@ export function SubscriptionsList() {
           </SelectContent>
         </Select>
 
-        <Select value={category} onValueChange={(v) => setCategory(v as Category | typeof ALL)}>
+        <Select
+          value={category}
+          onValueChange={(v) => {
+            setCategory(v as Category | typeof ALL);
+            setPage(1);
+          }}
+        >
           <SelectTrigger className="w-56">
             <SelectValue>
               {(v: string) =>
@@ -155,7 +172,10 @@ export function SubscriptionsList() {
         <div className="ml-auto flex items-center">
           <Select
             value={sortBy}
-            onValueChange={(v) => setSortBy(v as NonNullable<SubscriptionListParams['sort_by']>)}
+            onValueChange={(v) => {
+              setSortBy(v as NonNullable<SubscriptionListParams['sort_by']>);
+              setPage(1);
+            }}
           >
             <SelectTrigger className="w-56 rounded-r-none border-r-0">
               <SelectValue>
@@ -178,7 +198,10 @@ export function SubscriptionsList() {
             className="rounded-l-none"
             aria-label={t('subscriptions.filters.toggleOrder')}
             title={t(order === 'asc' ? 'subscriptions.filters.asc' : 'subscriptions.filters.desc')}
-            onClick={() => setOrder((o) => (o === 'asc' ? 'desc' : 'asc'))}
+            onClick={() => {
+              setOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+              setPage(1);
+            }}
           >
             {order === 'asc' ? (
               <ArrowUp className="size-4" aria-hidden />
@@ -255,6 +278,8 @@ export function SubscriptionsList() {
           </Table>
         </Card>
       )}
+
+      <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
 
       <SubscriptionFormDialog
         open={formOpen}

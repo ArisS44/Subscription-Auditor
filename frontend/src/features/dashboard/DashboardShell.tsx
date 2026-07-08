@@ -8,9 +8,11 @@ import { DashboardSidebar } from './DashboardSidebar';
  *  navigation, the sidebar and its state persist across tab changes. */
 export function DashboardShell() {
   return (
-    <div className="flex min-h-svh bg-background text-foreground">
+    // Fix the shell to the viewport height and hide overflow, so the sidebar
+    // stays put and only the main content area scrolls (never the whole page).
+    <div className="flex h-svh overflow-hidden bg-background text-foreground">
       <DashboardSidebar />
-      <main className="flex-1 overflow-x-auto px-6 py-6">
+      <main className="flex-1 overflow-y-auto px-6 py-6">
         <Outlet />
       </main>
     </div>

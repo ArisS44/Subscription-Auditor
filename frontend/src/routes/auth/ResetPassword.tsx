@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { AuthBrand } from '@/features/auth/AuthBrand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +29,7 @@ function ResetPassword() {
 
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background px-4 text-center text-foreground">
+      <AuthBrand />
       <h1 className="text-2xl font-semibold">{t('auth.resetPassword.title')}</h1>
       {success ? (
         <>

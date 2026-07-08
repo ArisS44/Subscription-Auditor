@@ -213,6 +213,66 @@
       }
     }
   },
+  "overview": {
+    "monthlyBurn": "Monthly burn",
+    "annualProjection": "{{amount}} / year",
+    "spendByCategory": "Spend by category",
+    "upcomingRenewals": "Upcoming renewals",
+    "upcomingRenewalsHint": "Next 30 days",
+    "topExpenses": "Top expenses",
+    "perMonth": "{{amount}} / month",
+    "noRenewals": "No renewals in the next 30 days.",
+    "noExpenses": "No active subscriptions yet.",
+    "noCategoryData": "No spend to chart for this currency.",
+    "empty": "No active subscriptions yet. Add one to see your spending here.",
+    "loadError": "Could not load your overview. Please try again.",
+    "currency": {
+      "label": "Currency",
+      "all": "All (per currency)"
+    },
+    "chartType": {
+      "label": "Chart type",
+      "bar": "Horizontal bars",
+      "column": "Vertical bars",
+      "donut": "Donut"
+    }
+  },
+  "settings": {
+    "profileTitle": "Profile",
+    "profileDescription": "Update how you appear and your language.",
+    "displayName": "Display name",
+    "displayNamePlaceholder": "How you'd like to be addressed",
+    "email": "Email",
+    "emailHint": "Your email can't be changed here.",
+    "language": "Language",
+    "languageAuto": "Automatic (browser)",
+    "languageEn": "English",
+    "languageEl": "Ελληνικά (Greek)",
+    "save": "Save changes",
+    "saved": "Saved",
+    "saveError": "Could not save. Please try again.",
+    "errors": {
+      "displayNameTooLong": "Display name is too long."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Choose which reminders you'll get.",
+      "renewalReminders": "Renewal reminders",
+      "renewalRemindersHint": "A heads-up before a subscription renews.",
+      "weeklySummary": "Weekly summary",
+      "weeklySummaryHint": "A weekly digest of your spending.",
+      "monthlyInsights": "Monthly insights",
+      "monthlyInsightsHint": "AI-written insights once a month."
+    }
+  },
+  "pagination": {
+    "label": "Pagination",
+    "first": "First page",
+    "previous": "Previous page",
+    "next": "Next page",
+    "last": "Last page",
+    "page": "Page {{page}}"
+  },
   "nav": {
     "home": "Home",
     "dashboard": "Dashboard"
