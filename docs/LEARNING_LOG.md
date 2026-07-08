@@ -5,7 +5,7 @@
 
 ---
 
-## Session 1 (2026-07-04) — Supabase Projects, Schema & Auth Config
+## Session 1 — Supabase Projects, Schema & Auth Config (2026-07-04)
 
 ### Supabase
 A hosted platform bundling Postgres, an Auth service (signup/login, JWT issuance, OAuth providers), and
@@ -53,7 +53,7 @@ Google Cloud Console.
 
 ---
 
-## Session 2 (2026-07-04) — JWT Verification & RLS Data Layer
+## Session 1 — JWT Verification & RLS Data Layer (2026-07-04)
 
 ### JWT verification (signature, `exp`, `aud`/`iss`)
 Verifying a JWT means checking three independent things before trusting any of its claims: (1) the
@@ -112,7 +112,7 @@ inputs differ. Not yet used against a real secret this session (no token-hash co
 yet), but established as the pattern for the extension-token check in a later session. Look here:
 `backend/app/security/compare.py`.
 
-## Session 3 (2026-07-04) — Frontend Skeleton
+## Session 1 — Frontend Skeleton (2026-07-04)
 
 ### Vite
 Vite is the frontend build tool and dev server. In dev it serves source files directly as native ES
@@ -172,7 +172,7 @@ present) is turned into an `Authorization: Bearer <token>` header; the next task
 that token from the Supabase session without needing to touch this file's structure. Look here:
 `frontend/src/lib/supabase.ts`, `frontend/src/lib/api.ts`.
 
-## Session 4 (2026-07-05) — Quality Baseline & Pre-commit
+## Session 1 — Quality Baseline & Pre-commit (2026-07-05)
 
 ### The pre-commit framework
 A git-hook manager that reads a version-controlled `.pre-commit-config.yaml` instead of hand-written
@@ -206,7 +206,7 @@ placeholder AWS uses in its docs, distinguishable by an `EXAMPLE` suffix) and co
 rejected the commit attempt (`aws-access-token` rule) before it was removed and a clean commit
 succeeded. Look here: `.pre-commit-config.yaml`, the `gitleaks` hook.
 
-## Session 5 (2026-07-05) — Auth Flows & Protected Page
+## Session 1 — Auth Flows & Protected Page (2026-07-05)
 
 ### CORS (Cross-Origin Resource Sharing)
 Browsers enforce the same-origin policy: JS on `http://localhost:5173` is blocked by default from
@@ -260,7 +260,7 @@ smoke test mocks `@/lib/supabase` entirely rather than hitting the real network,
 existing. Look here: `frontend/vite.config.ts` (the `test` block), `frontend/src/test/setup.ts`,
 `frontend/src/features/auth/ProtectedRoute.test.tsx`.
 
-## Session 6 (2026-07-06) — Azure Provisioning
+## Session 1 — Azure Provisioning (2026-07-06)
 
 ### Resource groups, ACR, and Container Apps
 A resource group is just a logical bucket — everything provisioned lives inside one so it can be
@@ -348,7 +348,7 @@ Authentication → Rate Limits.
 
 ---
 
-## Session 7 (2026-07-07) — Subscriptions API
+## Session 2 — Subscriptions API (2026-07-07)
 
 ### RLS on a child table (generalizing the profiles pattern)
 `profiles` is one row per user, keyed on its own `id` (which *is* the user's auth id), so its RLS policies
@@ -434,7 +434,7 @@ this endpoint should fake. Also here: only `status = 'active'` rows contribute t
 (cancelled/paused still show in the plain list, just not in the money math), and an empty portfolio returns
 well-formed empty dicts/lists rather than nulls or a crash. Look here: `app/services/analytics.py::build_overview`.
 
-## Session 8 (2026-07-07) — Dashboard Shell & Data Hooks
+## Session 2 — Dashboard Shell & Data Hooks (2026-07-07)
 
 ### Layout routes + nested routes (React Router) — a persistent shell
 The dashboard needs a sidebar/header that stays put while only the inner content changes between tabs. A
@@ -465,7 +465,7 @@ strings** (Pydantic serializes `Decimal` to a string to preserve precision), so 
 only at display/format time. Look here: `src/hooks/useSubscriptions.ts` and `src/hooks/useAnalytics.ts`
 (pattern anchored on the existing `src/hooks/useMe.ts`).
 
-## Session 9 (2026-07-08) — Subscription CRUD UI
+## Session 2 — Subscription CRUD UI (2026-07-08)
 
 ### react-hook-form + Zod without a generated `<Form>` wrapper
 A typical shadcn setup ships a `<Form>`/`<FormField>` component that hides the form wiring; this Base UI
@@ -497,7 +497,7 @@ localizes month/day names — parsing/serializing as *local* dates to avoid the 
 `src/features/subscriptions/SubscriptionFormDialog.tsx`, `DatePicker.tsx`, and
 `src/features/dashboard/ConfirmDialog.tsx`.
 
-## Session 10 (2026-07-08) — Overview charts (Recharts), Intl & Settings
+## Session 2 — Overview charts (Recharts), Intl & Settings (2026-07-08)
 
 ### Recharts fundamentals (first chart in the project)
 Recharts is *declarative* SVG charting: you compose a chart from React components — `<BarChart>`/`<PieChart>`
