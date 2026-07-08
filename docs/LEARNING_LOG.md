@@ -464,3 +464,35 @@ strings** (Pydantic serializes `Decimal` to a string to preserve precision), so 
 `price`/`monthly_equivalent` as `string` and pass them through untouched — conversion to a number happens
 only at display/format time. Look here: `src/hooks/useSubscriptions.ts` and `src/hooks/useAnalytics.ts`
 (pattern anchored on the existing `src/hooks/useMe.ts`).
+
+## Session 9 (2026-07-08) — Subscription CRUD UI
+
+### react-hook-form + Zod without a generated `<Form>` wrapper
+A typical shadcn setup ships a `<Form>`/`<FormField>` component that hides the form wiring; this Base UI
+"nova" preset doesn't, so the two libraries are wired directly — which is clearer about who does what.
+**react-hook-form** owns form state (values, touched/dirty, errors) mostly *uncontrolled* (reads inputs via
+refs), so typing doesn't re-render the whole form. **Zod** is the schema — one object describing the rules,
+which also infers the TS type of the values (`z.infer`). **`@hookform/resolvers/zod`** bridges them:
+`resolver: zodResolver(schema)` makes RHF validate with Zod and drop each message on the right field. Plain
+inputs use `{...register('name')}`; components without a native ref (the Base UI `Select`, the custom
+`DatePicker`) use `<Controller>` and get `value`/`onChange` wired manually. The `field` primitives
+(`Field`/`FieldLabel`/`FieldError`) are just presentation — `FieldError` takes an `errors` array, so RHF's
+per-field error feeds straight in. Two project-specific wrinkles: the Zod messages are produced by a
+*factory* `createSubscriptionSchema(t)` so they're i18n-keyed (and a test passes an identity `t`); and the
+schema is **UX-only** — the FastAPI/Pydantic backend re-validates and is the real trust boundary, so the
+schema mirrors the backend constraints rather than replacing them. Look here:
+`src/features/subscriptions/subscription-schema.ts` and `SubscriptionFormDialog.tsx`.
+
+### The Base UI `Dialog` as a modal (form host and confirmations)
+`Dialog` is controlled (`open`/`onOpenChange`) and portals its content above the page via
+`DialogContent`. One `SubscriptionFormDialog` instance serves both create and edit — pass a subscription to
+edit (pre-filled, PATCH) or omit it to add (blank, POST) — with `reset()` in an effect repopulating on open.
+A subtlety worth noting: a Base UI menu item that opens a dialog can fight over focus, and Base UI
+*group-label* parts (`SelectLabel`/`DropdownMenuLabel`) throw if used without a surrounding `Group` — so a
+plain styled element is used for non-interactive menu headers. The confirmation flows (cancel, delete, and
+the reversible pause/resume/reactivate) all reuse one generic `ConfirmDialog`, driven by a small piece of
+state, rather than a bespoke dialog each. Native `<input type="date">` was replaced by a `DatePicker`
+(Popover + the design-system Calendar) so the picker matches the app's theme, shows DD/MM/YYYY, and
+localizes month/day names — parsing/serializing as *local* dates to avoid the UTC off-by-one. Look here:
+`src/features/subscriptions/SubscriptionFormDialog.tsx`, `DatePicker.tsx`, and
+`src/features/dashboard/ConfirmDialog.tsx`.

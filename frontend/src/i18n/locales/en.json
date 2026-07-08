@@ -62,6 +62,157 @@
       "switch": "Switch account"
     }
   },
+  "subscriptions": {
+    "add": "Add subscription",
+    "empty": "No subscriptions yet — add your first one.",
+    "emptyFiltered": "No subscriptions match your filters.",
+    "loadError": "Could not load your subscriptions. Please try again.",
+    "count": "{{count}} subscription",
+    "count_other": "{{count}} subscriptions",
+    "columns": {
+      "name": "Name",
+      "price": "Price",
+      "category": "Category",
+      "status": "Status",
+      "nextRenewal": "Next renewal",
+      "actions": "Actions"
+    },
+    "filters": {
+      "status": "Status",
+      "category": "Category",
+      "all": "All",
+      "allStatuses": "All statuses",
+      "allCategories": "All categories",
+      "sortBy": "Sort by",
+      "toggleOrder": "Toggle sort direction",
+      "asc": "Ascending",
+      "desc": "Descending"
+    },
+    "sort": {
+      "name": "Name",
+      "price": "Price",
+      "next_renewal_date": "Next renewal",
+      "created_at": "Date added"
+    },
+    "actions": {
+      "menu": "Open actions",
+      "edit": "Edit",
+      "pause": "Pause",
+      "resume": "Resume",
+      "reactivate": "Reactivate",
+      "cancel": "Cancel",
+      "delete": "Delete"
+    },
+    "status": {
+      "active": "Active",
+      "cancelled": "Cancelled",
+      "paused": "Paused"
+    },
+    "category": {
+      "ai_tool": "AI tool",
+      "streaming": "Streaming",
+      "productivity": "Productivity",
+      "cloud_storage": "Cloud storage",
+      "other": "Other",
+      "none": "Uncategorized"
+    },
+    "cycle": {
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "quarterly": "Quarterly",
+      "yearly": "Yearly"
+    },
+    "per": {
+      "weekly": "week",
+      "monthly": "month",
+      "quarterly": "quarter",
+      "yearly": "year"
+    },
+    "form": {
+      "addTitle": "Add subscription",
+      "editTitle": "Edit subscription",
+      "addDescription": "Track a new recurring subscription.",
+      "editDescription": "Update this subscription's details.",
+      "fields": {
+        "name": "Name",
+        "category": "Category",
+        "price": "Price",
+        "currency": "Currency",
+        "billingCycle": "Billing cycle",
+        "startDate": "Start date",
+        "nextRenewalDate": "Next renewal date",
+        "nextRenewalHint": "Leave empty to calculate it from the start date and billing cycle.",
+        "notes": "Notes"
+      },
+      "categoryNone": "Uncategorized",
+      "datePlaceholder": "Pick a date",
+      "submitCreate": "Add subscription",
+      "submitEdit": "Save changes",
+      "cancel": "Cancel",
+      "submitError": "Could not save. Please try again.",
+      "errors": {
+        "nameRequired": "Name is required.",
+        "nameTooLong": "Name is too long.",
+        "priceRequired": "Price is required.",
+        "priceInvalid": "Enter a valid amount (up to two decimals).",
+        "priceTooLarge": "Price is too large.",
+        "currencyInvalid": "Select a valid currency.",
+        "startDateRequired": "Start date is required.",
+        "dateInvalid": "Enter a valid date.",
+        "notesTooLong": "Notes are too long."
+      }
+    },
+    "cancelDialog": {
+      "title": "Cancel subscription?",
+      "description": "This marks \"{{name}}\" as cancelled but keeps it in your list and history.",
+      "confirm": "Cancel subscription",
+      "cancel": "Keep it"
+    },
+    "deleteDialog": {
+      "title": "Delete subscription?",
+      "description": "This permanently deletes \"{{name}}\". This can't be undone.",
+      "confirm": "Delete",
+      "cancel": "Keep it"
+    },
+    "statusDialog": {
+      "cancel": "Cancel",
+      "pause": {
+        "title": "Pause subscription?",
+        "description": "This marks \"{{name}}\" as paused. It stops counting toward your spending until you resume it.",
+        "confirm": "Pause"
+      },
+      "resume": {
+        "title": "Resume subscription?",
+        "description": "This sets \"{{name}}\" back to active, so it counts toward your spending again.",
+        "confirm": "Resume"
+      },
+      "reactivate": {
+        "title": "Reactivate subscription?",
+        "description": "This sets \"{{name}}\" back to active and clears its cancellation date.",
+        "confirm": "Reactivate"
+      }
+    },
+    "detail": {
+      "price": "Price",
+      "billingCycle": "Billing cycle",
+      "category": "Category",
+      "status": "Status",
+      "startDate": "Start date",
+      "nextRenewal": "Next renewal",
+      "created": "Added",
+      "notes": "Notes",
+      "noNotes": "No notes.",
+      "notSet": "Not set",
+      "loadError": "Could not load this subscription.",
+      "usage": {
+        "title": "Usage & cost efficiency",
+        "chart": "Usage over time",
+        "heatmap": "Usage heatmap",
+        "costPerHour": "Cost per hour",
+        "placeholder": "Available after usage tracking is set up."
+      }
+    }
+  },
   "nav": {
     "home": "Home",
     "dashboard": "Dashboard"
