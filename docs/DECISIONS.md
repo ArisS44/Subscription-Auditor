@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-07-08 — Live currency conversion: scoped as an opt-in fast-follow after Session 2's deploy
+
+**Decision:** Session 2 ships with **no live FX conversion** — per-currency grouping (never converted) stays
+the design for everything built in this session, including the Stage 1.4 fix that ranks top expenses fairly
+*within* each currency. Real FX conversion is confirmed as real, wanted scope, but explicitly scheduled as a
+**fast-follow once Session 2's Stage 3 (prod migration + deploy) is live and verified** — not folded into the
+current deploy.
+
+When built, the shape is: **no default single-currency view anywhere** — every existing per-currency display
+(burn, annualized, category spend, native top-expenses ranking) stays exactly as-is, permanently. On top of
+that, add an **opt-in** "convert to [currency]" control in Overview, letting the User pick a target currency
+to (a) see converted comparison totals and (b) compare top expenses fairly across currencies — clearly labeled
+as an estimate, never silently blending into the real per-currency figures.
+
+**Why:** matches the app's financial-honesty stance (never silently convert) while giving the User the
+comparison view they actually want. Doing it after Stage 3 deploys means the already-verified Session-2 slice
+ships on schedule, and FX work — a live external rate source, a caching/staleness strategy that doesn't need a
+scheduler (avoid entangling with the pre-Session-5 scheduler single-ownership question), and a new small
+`fx_rates`-style table/migration — gets scoped properly rather than rushed into the current deploy.
+
+**How to apply:** when picking this up, design as: (1) a backend FX-rate fetch+cache layer against a reliable,
+free, no-key source (e.g. Frankfurter/ECB-based rates) with a staleness TTL, no scheduler required (fetch
+lazily when the cached rate is stale); (2) apply the conversion only at the point the User opts in — top
+expenses' native per-currency ranking (Task 1.4) is unaffected and stays the default; (3) an Overview
+currency-picker control that shows converted totals/top-expenses labeled as an estimate. Revisit
+`docs/APP_DESCRIPTION.md` and this file together before committing to the exact approach, and update the
+Session-2 Spec's "no FX conversion" language once this fast-follow actually starts.
+
+---
+
 ## 2026-07-04 — Minimal schema for Session 1 (profiles only)
 
 **Decision:** The first Supabase migration (`supabase/migrations/20260704152946_create_profiles_table.sql`)
