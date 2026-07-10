@@ -525,3 +525,50 @@ the list, detail, and Overview. The Settings form (react-hook-form + Zod on the 
 recipe as the subscription form) writes `display_name`/`preferred_language` via a new `useUpdateProfile`
 `PATCH /me` mutation that invalidates `['me']`; choosing English/Greek also applies the language live.
 Look here: `src/lib/format.ts`, `src/features/settings/SettingsPanel.tsx`, `src/hooks/useMe.ts`.
+
+## Session 3 — Chat schema & LLM provider layer (2026-07-10)
+
+### `NULLS NOT DISTINCT` for a "one row per scope" counter
+The `llm_usage` table backs two daily counters — one per user and one app-wide — in a single table by
+letting `user_id` be `NULL` for the app-wide row. The catch: Postgres normally treats every `NULL` as
+*distinct* in a unique index, so a plain `UNIQUE (user_id, day)` would happily allow many app-wide rows for
+the same day and break the counter. `UNIQUE NULLS NOT DISTINCT (user_id, day)` (Postgres 15+) instead treats
+the `NULL`s as equal, guaranteeing exactly one row per (scope, day) — which lets the future counter service
+upsert with one clean `ON CONFLICT` target instead of two code paths. The counters live in the DB (not
+in-memory) so they stay correct across horizontally-scaled replicas and survive restarts. Look here:
+`supabase/migrations/20260710091357_create_chat_schema.sql`.
+
+### Provider-agnostic LLM layer (one wrapper, swappable providers)
+Every model access in the backend goes through `app/services/llm.py`, which exposes *provider-neutral* types
+— an internal tool-definition, a message-history `Message`, and one event stream (`TextDelta` / `ToolCall` /
+`StreamDone` / `StreamError`) — and hides all provider specifics behind an `LLMAdapter`. A concrete adapter
+translates exactly three things that differ between providers: (a) the **tool-definition envelope** (OpenAI
+wraps a JSON Schema under `function.parameters`; Anthropic uses `input_schema`), (b) how a **tool result
+re-enters history** (OpenAI: a `role:"tool"` message keyed by `tool_call_id`; Anthropic: a result content
+block), and (c) **normalising the raw SSE stream** into the one internal event stream. The Groq adapter is
+written over `httpx` against Groq's OpenAI-compatible API rather than a vendor SDK, so those translations stay
+explicit and testable and the abstraction isn't coupled to any SDK's types. Provider, model, key, and base
+URL come only from config, so switching models/providers is a config change, not a code change. Look here:
+`backend/app/services/llm.py` and the config additions in `backend/app/config.py`.
+
+### Streaming tool calls: assemble fragments before acting
+A provider streams a tool call in pieces — the `id` and function `name` arrive first, then the JSON
+`arguments` accumulate across several chunks. The adapter buffers these fragments by index and only emits a
+single assembled `ToolCall` (with the complete `arguments` JSON string) once the stream ends, so a caller
+never tries to validate or execute a half-built call. Text chunks, by contrast, are yielded live for SSE
+relay to the browser. Look here: `_accumulate_tool_call` in `backend/app/services/llm.py`.
+
+### Testing an HTTP client without the network (`httpx.MockTransport`)
+The adapter unit tests prove the three translations and the env-driven provider/model selection with **zero**
+real API calls by handing the `httpx.AsyncClient` a `MockTransport` whose handler returns a canned response —
+including a fabricated SSE body for the streaming test. This exercises the real request-building and
+stream-parsing code paths (you can even assert on the outgoing request payload) while staying fast and
+offline. Look here: `backend/tests/test_llm.py`.
+
+### `BeforeValidator` + `AnyHttpUrl` for a safe optional URL
+`subscriptions.manage_url` is validated at the API boundary with a reusable annotated type
+(`ManageUrl = Annotated[str, BeforeValidator(...)]`) that caps length first, then runs Pydantic's
+`AnyHttpUrl` (via a `TypeAdapter`) to reject any non-`http(s)` scheme (e.g. `javascript:`) — returning a clean
+422. It's display-only and never fetched by the backend, so there's no SSRF surface. This mirrors the
+existing `Price`/`Currency` annotated-type pattern: constrained types on create/update, a loose `str` on the
+response. Look here: `backend/app/models/subscription.py`.
