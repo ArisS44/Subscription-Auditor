@@ -289,6 +289,9 @@
     "newPassword": "New password",
     "rememberMe": "Remember me",
     "orDivider": "or",
+    "captcha": {
+      "error": "Verification failed. Please try again."
+    },
     "login": {
       "title": "Log in",
       "submit": "Log in",

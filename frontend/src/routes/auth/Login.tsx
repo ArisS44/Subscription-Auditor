@@ -1,15 +1,16 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase, setRememberMe } from '@/lib/supabase';
 import { AuthBrand } from '@/features/auth/AuthBrand';
+import { Turnstile, type TurnstileHandle } from '@/features/auth/Turnstile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 
 function Login() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -17,19 +18,30 @@ function Login() {
   const [rememberMe, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Turnstile token: required before submit, single-use (reset after each try).
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<TurnstileHandle>(null);
 
   const from =
     (location.state as { from?: { pathname: string } } | null)?.from?.pathname ?? '/dashboard';
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!captchaToken) return;
     setError(null);
     setSubmitting(true);
     setRememberMe(rememberMe);
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken },
+    });
     setSubmitting(false);
     if (signInError) {
       setError(t('auth.login.error'));
+      // The token was consumed by this attempt — force a fresh challenge.
+      captchaRef.current?.reset();
+      setCaptchaToken(null);
       return;
     }
     navigate(from, { replace: true });
@@ -84,8 +96,18 @@ function Login() {
             {t('auth.login.forgotPassword')}
           </Link>
         </div>
+        <Turnstile
+          ref={captchaRef}
+          onVerify={setCaptchaToken}
+          onExpire={() => setCaptchaToken(null)}
+          onError={() => {
+            setCaptchaToken(null);
+            setError(t('auth.captcha.error'));
+          }}
+          language={i18n.language}
+        />
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" disabled={submitting || !captchaToken}>
           {t('auth.login.submit')}
         </Button>
       </form>

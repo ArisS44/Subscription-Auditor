@@ -1,29 +1,38 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { AuthBrand } from '@/features/auth/AuthBrand';
+import { Turnstile, type TurnstileHandle } from '@/features/auth/Turnstile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 function ForgotPassword() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  // Turnstile token: required before submit, single-use (reset after each try).
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<TurnstileHandle>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!captchaToken) return;
     setError(null);
     setSubmitting(true);
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
+      captchaToken,
     });
     setSubmitting(false);
     if (resetError) {
       setError(t('auth.forgotPassword.error'));
+      // The token was consumed by this attempt — force a fresh challenge.
+      captchaRef.current?.reset();
+      setCaptchaToken(null);
       return;
     }
     setSentTo(email);
@@ -51,8 +60,18 @@ function ForgotPassword() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+            <Turnstile
+              ref={captchaRef}
+              onVerify={setCaptchaToken}
+              onExpire={() => setCaptchaToken(null)}
+              onError={() => {
+                setCaptchaToken(null);
+                setError(t('auth.captcha.error'));
+              }}
+              language={i18n.language}
+            />
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || !captchaToken}>
               {t('auth.forgotPassword.submit')}
             </Button>
           </form>
