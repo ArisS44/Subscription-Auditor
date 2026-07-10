@@ -605,3 +605,37 @@ served rather than erroring; only a truly cold cache with a down source is a har
 no-external-call path (a mock client that fails if called), the refresh path, conversion math, and the
 fallback — and a live check caught that `frankfurter.app` now 301-redirects to `frankfurter.dev/v1` (httpx
 doesn't follow redirects by default). Look here: `backend/app/services/fx.py`, ADR 0003.
+
+### SSE streaming from FastAPI + the tool-calling loop
+The chat endpoint returns a `StreamingResponse` with `media_type="text/event-stream"` over an async
+generator that yields one `data: {json}\n\n` frame per event (text delta, tool activity, title, done,
+error). Explicit `Cache-Control: no-cache` and `X-Accel-Buffering: no` headers stop the ingress/proxy from
+buffering the stream into one blob (a real Container Apps deploy risk). The loop (`services/chat.py`) per
+turn: replay a bounded ~20-message window (not the whole history — token cost), call the LLM wrapper with
+`tools.tool_definitions()`, stream text deltas live, and when the model emits a tool call, dispatch it
+*through the registry* (`tools.dispatch`, never a handler directly, so the Pydantic gate always runs), feed
+the result back into history, and loop — capped at 5 iterations so a runaway model ends gracefully with a
+partial answer instead of hanging. "Inline-visual grounding" is enforced here: a `render_chart`/`render_table`
+payload is only trusted/stored if `get_analytics` ran in the same turn, so displayed numbers always trace to
+real tool output. Destructive-action confirmation is left to the system prompt — the loop just dispatches
+whatever validated call the model actually sends, adding no second mechanism. Look here:
+`backend/app/routers/chat.py`, `backend/app/services/chat.py`.
+
+### DB-backed, replica-safe caps (correct without a shared cache)
+Chat caps live in the DB so they hold across horizontally-scaled replicas: the per-user daily (200) and
+app-wide daily (~5000, tunable) counters are `llm_usage` rows incremented with a single
+`INSERT ... ON CONFLICT (user_id, day) DO UPDATE SET request_count = request_count + 1 RETURNING count`
+(correct under concurrency; the app-wide row is the NULL-`user_id` scope). Because `llm_usage` has only a
+read-own RLS policy, these writes go through a service-role connection. The per-minute velocity cap (30/min)
+is a `count(*)` of the user's own recent messages in a 60s window — no extra table. Any breach returns a
+graceful "limit reached" event, never a 500, and never reaches the model. Look here:
+`backend/app/services/usage.py`, `backend/app/db/usage.py`.
+
+### Gotcha: provider function-calling rejects Pydantic's Decimal JSON-schema
+Turning a Pydantic model straight into a tool's `parameters` JSON Schema can produce keywords a provider's
+function-calling validator rejects. Concretely, a `Decimal` field emits a string-branch `pattern` regex that
+uses lookahead `(?!…)`, which Groq's RE2-based validator refuses ("not valid 'regex'") → HTTP 400 for the
+whole request. The fix: sanitize the LLM-facing schema by recursively stripping `pattern`/`format` before
+sending. This is safe because `tools.dispatch` re-validates every payload against the *real* Pydantic model —
+the schema sent to the model is only a hint. The stubbed unit tests couldn't catch this; the live end-to-end
+check did. Look here: `_provider_safe_schema` in `backend/app/services/tools.py`.
