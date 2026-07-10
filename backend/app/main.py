@@ -8,7 +8,7 @@ from app.config import settings
 from app.db.pool import close_pool, create_pool
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import analytics, fx, health, me, subscriptions
+from app.routers import analytics, chat, fx, health, me, subscriptions
 
 
 @asynccontextmanager
@@ -46,3 +46,4 @@ app.include_router(me.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(subscriptions.router, prefix="/api/v1")
 app.include_router(fx.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")

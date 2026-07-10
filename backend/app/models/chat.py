@@ -18,6 +18,18 @@ _TITLE_MAX = 200
 _CONTENT_MAX = 100_000
 
 
+_USER_MESSAGE_MAX = 8000
+
+
+class ChatMessageRequest(BaseModel):
+    """A new user message posted to a conversation. `onboarding` selects the
+    onboarding system-prompt variant; it changes only prompt framing, not loop
+    logic. Content is capped to bound per-request input."""
+
+    content: str = Field(min_length=1, max_length=_USER_MESSAGE_MAX)
+    onboarding: bool = False
+
+
 class ConversationCreate(BaseModel):
     """Fields a client may supply when opening a conversation. `user_id` is
     intentionally absent — it is taken from the caller's JWT in the router, never

@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     db_pool_min_size: int = 1
     db_pool_max_size: int = 10
     auth_rate_limit_per_minute: int = 20
+
+    # Chat engine caps (all tunable from env). Velocity is a per-user post-auth
+    # sliding window; the daily caps are DB-backed via llm_usage so they're
+    # correct across replicas. The global ceiling protects the shared LLM budget.
+    chat_user_per_minute: int = 30
+    chat_user_daily_cap: int = 200
+    chat_global_daily_cap: int = 5000
+    # Sliding history window replayed to the model, and the per-turn tool-call
+    # iteration ceiling that stops a runaway loop.
+    chat_history_window: int = 20
+    chat_max_tool_iterations: int = 5
     cors_allow_origins: str = "http://localhost:5173"
 
     @property

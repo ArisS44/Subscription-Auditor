@@ -26,7 +26,7 @@ import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, BeforeValidator, Field, ValidationError, model_validator
@@ -95,11 +95,35 @@ def registered_tool_names() -> list[str]:
     return sorted(_REGISTRY)
 
 
+# JSON-schema keywords that trip strict provider function-calling validators.
+# `pattern` can carry a regex (e.g. Pydantic's Decimal pattern uses lookahead)
+# that a provider's RE2-based validator rejects; `format` values likewise aren't
+# uniformly supported. Stripping them is safe: `dispatch` re-validates every
+# payload against the real Pydantic model, so the LLM-facing schema is only a hint.
+_SCHEMA_KEYS_TO_STRIP = ("pattern", "format")
+
+
+def _provider_safe_schema(node: Any) -> Any:
+    """Recursively drop schema keywords that break strict provider validators."""
+    if isinstance(node, dict):
+        return {
+            k: _provider_safe_schema(v) for k, v in node.items() if k not in _SCHEMA_KEYS_TO_STRIP
+        }
+    if isinstance(node, list):
+        return [_provider_safe_schema(v) for v in node]
+    return node
+
+
 def tool_definitions() -> list[ToolDef]:
     """The provider-neutral tool definitions for the LLM layer — each tool's
-    Pydantic model rendered as JSON Schema. The adapter wraps these per provider."""
+    Pydantic model rendered as JSON Schema, sanitized to a provider-safe subset.
+    The adapter wraps these per provider."""
     return [
-        ToolDef(name=s.name, description=s.description, parameters=s.args_model.model_json_schema())
+        ToolDef(
+            name=s.name,
+            description=s.description,
+            parameters=_provider_safe_schema(s.args_model.model_json_schema()),
+        )
         for s in _REGISTRY.values()
     ]
 
