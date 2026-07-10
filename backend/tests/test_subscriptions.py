@@ -210,6 +210,37 @@ def test_validation_rejections_return_422(test_client, user_a):
         assert r.status_code == 422, f"{label} should be 422, got {r.status_code}"
 
 
+def test_manage_url_round_trips_through_create_update_get(test_client, user_a):
+    _, token = user_a
+    created = test_client.post(
+        BASE, headers=_auth(token), json=_payload(manage_url="https://example.com/account/billing")
+    ).json()
+    assert created["manage_url"] == "https://example.com/account/billing"  # stored as-is on create
+
+    got = test_client.get(f"{BASE}/{created['id']}", headers=_auth(token)).json()
+    assert got["manage_url"] == "https://example.com/account/billing"  # round-trips on get
+
+    updated = test_client.patch(
+        f"{BASE}/{created['id']}",
+        headers=_auth(token),
+        json={"manage_url": "http://provider.example/cancel"},
+    ).json()
+    assert updated["manage_url"] == "http://provider.example/cancel"  # updatable
+
+
+def test_manage_url_rejects_non_http_and_oversized(test_client, user_a):
+    _, token = user_a
+    bad_cases = {
+        "javascript scheme": _payload(manage_url="javascript:alert(1)"),
+        "ftp scheme": _payload(manage_url="ftp://example.com/file"),
+        "not a url": _payload(manage_url="not-a-url"),
+        "oversized": _payload(manage_url="https://example.com/" + "a" * 2100),
+    }
+    for label, body in bad_cases.items():
+        r = test_client.post(BASE, headers=_auth(token), json=body)
+        assert r.status_code == 422, f"{label} should be 422, got {r.status_code}"
+
+
 def test_get_nonexistent_returns_404(test_client, user_a):
     _, token = user_a
     missing = "00000000-0000-0000-0000-000000000000"
@@ -286,6 +317,7 @@ async def test_cross_user_subscription_denied_by_rls(db_pool, user_a, user_b):
             next_renewal_date=date.today() + timedelta(days=30),
             status="active",
             notes=None,
+            manage_url=None,
         )
     sub_id = str(row["id"])
 

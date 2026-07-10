@@ -6,7 +6,7 @@ import asyncpg
 # Kept as one constant so the SELECT/RETURNING lists never drift from each other.
 _COLUMNS = (
     "id, user_id, name, category, price, currency, billing_cycle, start_date, "
-    "next_renewal_date, status, cancellation_date, notes, created_at, updated_at"
+    "next_renewal_date, status, cancellation_date, notes, manage_url, created_at, updated_at"
 )
 
 # ORDER BY targets an identifier + keyword, which cannot be a bind parameter — so
@@ -36,6 +36,7 @@ _UPDATABLE_COLUMNS = frozenset(
         "status",
         "cancellation_date",
         "notes",
+        "manage_url",
     }
 )
 
@@ -107,6 +108,7 @@ async def insert_subscription(
     next_renewal_date: date | None,
     status: str,
     notes: str | None,
+    manage_url: str | None,
 ) -> asyncpg.Record:
     """Insert a new subscription and return the created row. `user_id` is passed
     explicitly by the service from the JWT `sub` claim — never from the request
@@ -116,8 +118,8 @@ async def insert_subscription(
         f"""
         INSERT INTO subscriptions
           (user_id, name, category, price, currency, billing_cycle,
-           start_date, next_renewal_date, status, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           start_date, next_renewal_date, status, notes, manage_url)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING {_COLUMNS}
         """,
         user_id,
@@ -130,6 +132,7 @@ async def insert_subscription(
         next_renewal_date,
         status,
         notes,
+        manage_url,
     )
 
 

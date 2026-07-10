@@ -103,6 +103,7 @@ async def create_subscription(claims: dict, payload: SubscriptionCreate) -> dict
             next_renewal_date=next_renewal,
             status=data["status"],
             notes=data["notes"],
+            manage_url=data["manage_url"],
         )
     return dict(row)
 
