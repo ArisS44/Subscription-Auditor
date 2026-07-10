@@ -572,3 +572,36 @@ offline. Look here: `backend/tests/test_llm.py`.
 422. It's display-only and never fetched by the backend, so there's no SSRF surface. This mirrors the
 existing `Price`/`Currency` annotated-type pattern: constrained types on create/update, a loose `str` on the
 response. Look here: `backend/app/models/subscription.py`.
+
+### Tool registry + dispatcher (validate-before-execute, not an if/elif chain)
+The chatbot's capabilities live in a registry — a `name -> ToolSpec` dict where each spec pairs a Pydantic
+argument model with a handler — dispatched by one generic function. `dispatch(name, arguments, claims)`
+looks up the tool, Pydantic-validates the model-supplied arguments, and only then calls the handler;
+a malformed payload returns a clean, *LLM-consumable* error string (naming the tool and offending fields)
+rather than raising or partially executing, so a later chat loop can feed the error back to the model to
+retry. Adding a capability is a `register(...)` call, never an edit to the dispatcher or loop (a test proves
+this by registering a stub tool without touching any other tool). Each tool is a thin adapter over an
+existing service called with the caller's `claims`, so RLS — not an app-level check — is what stops a tool
+crossing a user boundary (also proven by a real-DB test). The security-sensitive `render_chart`/`render_table`
+validators enforce a fixed chart-type enum, finite numbers (reject NaN/inf/strings), and length-capped,
+markup-free labels as defense in depth. Look here: `backend/app/services/tools.py`,
+`backend/tests/test_tools.py`.
+
+### Service-role writes that bypass RLS (the other side of the RLS wall)
+`fx_rates` is global reference data: any signed-in user may *read* it, but the only writer is the backend
+cache refresh. The trick is that `rls_connection(claims)` deliberately does `set role = authenticated` to
+*turn RLS on* for a request; a plain `pool.acquire()` connection runs as the DSN's login role, which is the
+table owner and therefore bypasses RLS. So the FX service writes via a plain pooled connection (no role set)
+and the `fx_rates` policy only needs an authenticated-read rule — there is no write policy for end users at
+all. Look here: `backend/app/db/fx.py` (plain-connection writes) vs `backend/app/db/rls.py`.
+
+### Lazy-refresh caching with a staleness TTL (no scheduler)
+Live FX rates are cached in `fx_rates` with a 12-hour TTL and refreshed *inline* on the first request that
+finds the cache stale or missing — deliberately no APScheduler / background job (running a scheduler safely
+across horizontally-scaled replicas is out of scope this session). A fresh cache is served with zero external
+calls; a stale/missing one triggers one fetch from Frankfurter (a fixed host — not a user URL, so no SSRF),
+upserts every pair for that base, then serves. If the source is down, the last-known-good cached rate is
+served rather than erroring; only a truly cold cache with a down source is a hard error. Tests assert the
+no-external-call path (a mock client that fails if called), the refresh path, conversion math, and the
+fallback — and a live check caught that `frankfurter.app` now 301-redirects to `frankfurter.dev/v1` (httpx
+doesn't follow redirects by default). Look here: `backend/app/services/fx.py`, ADR 0003.
