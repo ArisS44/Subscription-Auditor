@@ -1,11 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BarChart3, BarChartHorizontal, CalendarClock, PieChart, TrendingUp } from 'lucide-react';
+import {
+  BarChart3,
+  BarChartHorizontal,
+  CalendarClock,
+  Info,
+  PieChart,
+  Signpost,
+  TrendingUp,
+} from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-context';
-import { useAnalytics, type Analytics } from '@/hooks/useAnalytics';
+import { useAnalytics, type Analytics, type TopExpense } from '@/hooks/useAnalytics';
+import { useFxRates } from '@/hooks/useFx';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -28,6 +39,21 @@ function paginate<T>(items: T[], page: number, size: number) {
   const pageCount = Math.max(1, Math.ceil(items.length / size));
   const safePage = Math.min(page, pageCount);
   return { visible: items.slice((safePage - 1) * size, safePage * size), pageCount };
+}
+
+// Convert `amount` (in `currency`) into `target` using rates keyed base=target
+// (so rates[c] = units of c per 1 target ⇒ amount_in_target = amount / rates[c]).
+// The target itself is 1:1. Returns null when the needed rate is missing, so a
+// gap surfaces as "incomplete" rather than a silently wrong total.
+function convertToTarget(
+  amount: number,
+  currency: string,
+  target: string,
+  rates: Record<string, string>,
+): number | null {
+  if (currency === target) return amount;
+  const rate = Number(rates[currency]);
+  return rate > 0 ? amount / rate : null;
 }
 
 const CHART_TYPES: { type: ChartType; icon: typeof BarChart3; labelKey: string }[] = [
@@ -56,6 +82,22 @@ function categoryData(
     .sort((a, b) => b.amount - a.amount);
 }
 
+/** A small marker that flags a figure as an FX-converted approximation, never a
+ *  real per-currency amount. Carries an explanatory tooltip on hover/focus. */
+function EstimateBadge() {
+  const { t } = useTranslation();
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 text-muted-foreground"
+      title={t('overview.convert.estimateTooltip')}
+    >
+      <Info className="size-3" aria-hidden />
+      {t('overview.convert.estimate')}
+    </Badge>
+  );
+}
+
 export function OverviewPanel() {
   const { t, i18n } = useTranslation();
   const locale = i18n.language;
@@ -76,6 +118,70 @@ export function OverviewPanel() {
   const [renewalsPage, setRenewalsPage] = useState(1);
   const [expensesPage, setExpensesPage] = useState(1);
   const [expensesCurrency, setExpensesCurrency] = useState<string>(ALL);
+
+  // Opt-in cross-currency conversion. Off by default: with it off the Overview is
+  // exactly per-currency (the app's default everywhere). On: convert every
+  // currency into one target and show comparison totals, each labeled an estimate.
+  const [convertOn, setConvertOn] = useState(false);
+  const [targetCurrency, setTargetCurrency] = useState<string>('');
+  const effectiveTarget = targetCurrency || currencies[0] || '';
+  // Only the *other* currencies need rates; the target is 1:1.
+  const fxSymbols = useMemo(
+    () => currencies.filter((c) => c !== effectiveTarget),
+    [currencies, effectiveTarget],
+  );
+  // Called unconditionally (Rules of Hooks) but only fetches when conversion is on
+  // and there is more than one currency to reconcile.
+  const fx = useFxRates(
+    session?.access_token,
+    effectiveTarget,
+    fxSymbols,
+    convertOn && currencies.length > 1,
+  );
+
+  // Derived converted figures: a single summed monthly/annual total and a
+  // cross-currency top-expenses ranking, all in the target currency. Null unless
+  // conversion is on and rates are loaded.
+  const converted = useMemo(() => {
+    if (!convertOn || !data || !fx.data || effectiveTarget === '') return null;
+    const rates = fx.data.rates;
+    let monthly = 0;
+    let annual = 0;
+    let incomplete = false;
+    for (const cur of currencies) {
+      const m = convertToTarget(
+        Number(data.monthly_burn_by_currency[cur]),
+        cur,
+        effectiveTarget,
+        rates,
+      );
+      const a = convertToTarget(
+        Number(data.annual_projection_by_currency[cur]),
+        cur,
+        effectiveTarget,
+        rates,
+      );
+      if (m === null || a === null) {
+        incomplete = true;
+        continue;
+      }
+      monthly += m;
+      annual += a;
+    }
+    const expenses = data.top_expenses
+      .map((e) => {
+        const value = convertToTarget(
+          Number(e.monthly_equivalent),
+          e.currency,
+          effectiveTarget,
+          rates,
+        );
+        return value === null ? null : { ...e, converted: value };
+      })
+      .filter((e): e is TopExpense & { converted: number } => e !== null)
+      .sort((a, b) => b.converted - a.converted);
+    return { monthly, annual, expenses, incomplete };
+  }, [convertOn, data, fx.data, currencies, effectiveTarget]);
 
   if (isLoading) {
     return <StateCard>{t('hello.loading')}</StateCard>;
@@ -113,17 +219,63 @@ export function OverviewPanel() {
     expensesCurrency === ALL
       ? data.top_expenses
       : data.top_expenses.filter((e) => e.currency === expensesCurrency);
+  // When conversion is on, the top-expenses card shows the cross-currency ranking
+  // instead of the per-currency filtered list.
+  const expenseSource: (TopExpense & { converted?: number })[] =
+    converted != null ? converted.expenses : filteredExpenses;
   const { visible: expenses, pageCount: expensePages } = paginate(
-    filteredExpenses,
+    expenseSource,
     expensesPage,
     LIST_PAGE_SIZE,
   );
 
   return (
     <section className="flex flex-col gap-4">
-      <h1 className="font-heading text-2xl font-semibold">{t('dashboard.overview.title')}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-heading text-2xl font-semibold">{t('dashboard.overview.title')}</h1>
 
-      {/* Per-currency burn tiles (never summed across currencies). */}
+        {/* Opt-in cross-currency conversion control. Only meaningful with more
+            than one currency in the portfolio. */}
+        {currencies.length > 1 && (
+          <div className="flex items-center gap-2 text-sm">
+            <Switch
+              id="convert-toggle"
+              checked={convertOn}
+              onCheckedChange={(checked) => setConvertOn(checked === true)}
+            />
+            <label htmlFor="convert-toggle" className="text-muted-foreground">
+              {t('overview.convert.label')}
+            </label>
+            <Select
+              value={effectiveTarget}
+              onValueChange={(v) => setTargetCurrency((v as string) ?? '')}
+              disabled={!convertOn}
+            >
+              <SelectTrigger size="sm" className="w-auto">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {currencies.map((cur) => (
+                  <SelectItem key={cur} value={cur}>
+                    {cur}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
+      {/* Roadmap teaser: a small, non-modal wink at what's coming (real Session
+          4-7 features). Deliberately minor — muted, single line, no dismiss/badge
+          — so it never competes with real data. */}
+      <p className="flex items-start gap-2 text-xs text-muted-foreground">
+        <Signpost className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <span>{t('overview.roadmap.teaser')}</span>
+      </p>
+
+      {/* Per-currency burn tiles (never summed across currencies) — always the
+          real, literal figures. */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {currencies.map((cur) => (
           <Card key={cur}>
@@ -143,6 +295,39 @@ export function OverviewPanel() {
           </Card>
         ))}
       </div>
+
+      {/* Converted comparison total — additive, appears only when conversion is
+          on. Clearly labeled an estimate so it never reads as a real figure. */}
+      {convertOn && currencies.length > 1 && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col gap-1 py-4">
+            <span className="flex items-center gap-2 text-xs tracking-wide text-muted-foreground uppercase">
+              {t('overview.convert.total')} · {effectiveTarget}
+              <EstimateBadge />
+            </span>
+            {fx.isError ? (
+              <span className="py-1 text-sm text-muted-foreground">
+                {t('overview.convert.unavailable')}
+              </span>
+            ) : fx.isLoading || !converted ? (
+              <span className="py-1 text-sm text-muted-foreground">
+                {t('overview.convert.loading')}
+              </span>
+            ) : (
+              <>
+                <span className="font-heading text-2xl font-semibold tabular-nums">
+                  ≈ {formatCurrency(converted.monthly, effectiveTarget, locale)}
+                </span>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  {t('overview.annualProjection', {
+                    amount: `≈ ${formatCurrency(converted.annual, effectiveTarget, locale)}`,
+                  })}
+                </span>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* Spend-by-category chart with type + currency controls. */}
@@ -262,39 +447,44 @@ export function OverviewPanel() {
             </CardContent>
           </Card>
 
-          {/* Top expenses (monthly-equivalent, per currency). */}
+          {/* Top expenses (monthly-equivalent). Per currency by default; a fairer
+              cross-currency ranking (all converted to the target) when on. */}
           <Card>
             <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="size-4 text-muted-foreground" aria-hidden />
                 {t('overview.topExpenses')}
               </CardTitle>
-              {currencies.length > 1 && (
-                <Select
-                  value={expensesCurrency}
-                  onValueChange={(v) => {
-                    setExpensesCurrency(v ?? ALL);
-                    setExpensesPage(1);
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-auto">
-                    <SelectValue>
-                      {(v: string) => (v === ALL ? t('overview.currency.all') : v)}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>{t('overview.currency.all')}</SelectItem>
-                    {currencies.map((cur) => (
-                      <SelectItem key={cur} value={cur}>
-                        {cur}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {converted != null ? (
+                <EstimateBadge />
+              ) : (
+                currencies.length > 1 && (
+                  <Select
+                    value={expensesCurrency}
+                    onValueChange={(v) => {
+                      setExpensesCurrency(v ?? ALL);
+                      setExpensesPage(1);
+                    }}
+                  >
+                    <SelectTrigger size="sm" className="w-auto">
+                      <SelectValue>
+                        {(v: string) => (v === ALL ? t('overview.currency.all') : v)}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL}>{t('overview.currency.all')}</SelectItem>
+                      {currencies.map((cur) => (
+                        <SelectItem key={cur} value={cur}>
+                          {cur}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )
               )}
             </CardHeader>
             <CardContent>
-              {filteredExpenses.length === 0 ? (
+              {expenseSource.length === 0 ? (
                 <p className="py-2 text-sm text-muted-foreground">{t('overview.noExpenses')}</p>
               ) : (
                 <div className="flex flex-col gap-3">
@@ -306,9 +496,13 @@ export function OverviewPanel() {
                       >
                         <span className="truncate font-medium">{e.name}</span>
                         <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {t('overview.perMonth', {
-                            amount: formatCurrency(e.monthly_equivalent, e.currency, locale),
-                          })}
+                          {e.converted != null
+                            ? t('overview.perMonth', {
+                                amount: `≈ ${formatCurrency(e.converted, effectiveTarget, locale)}`,
+                              })
+                            : t('overview.perMonth', {
+                                amount: formatCurrency(e.monthly_equivalent, e.currency, locale),
+                              })}
                         </span>
                       </li>
                     ))}

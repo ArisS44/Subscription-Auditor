@@ -16,6 +16,7 @@ const valid = {
   start_date: '2026-07-01',
   next_renewal_date: '',
   notes: '',
+  manage_url: '',
 };
 
 describe('subscription form schema', () => {
@@ -59,5 +60,23 @@ describe('subscription form schema', () => {
 
   it('rejects an invalid currency', () => {
     expect(schema.safeParse({ ...valid, currency: 'XyZ' }).success).toBe(false);
+  });
+
+  it('accepts an https manage_url', () => {
+    expect(schema.safeParse({ ...valid, manage_url: 'https://example.com/billing' }).success).toBe(
+      true,
+    );
+  });
+
+  it('accepts an empty manage_url (cleared)', () => {
+    expect(schema.safeParse({ ...valid, manage_url: '' }).success).toBe(true);
+  });
+
+  it('rejects a non-http(s) manage_url scheme', () => {
+    expect(schema.safeParse({ ...valid, manage_url: 'javascript:alert(1)' }).success).toBe(false);
+  });
+
+  it('rejects a malformed manage_url', () => {
+    expect(schema.safeParse({ ...valid, manage_url: 'not a url' }).success).toBe(false);
   });
 });

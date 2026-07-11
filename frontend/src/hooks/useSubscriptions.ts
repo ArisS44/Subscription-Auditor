@@ -27,6 +27,9 @@ export interface Subscription {
   status: SubscriptionStatus;
   cancellation_date: string | null;
   notes: string | null;
+  // Optional user-provided link to the provider's manage/cancel page. Display-only;
+  // the backend validates it as a well-formed http(s) URL (≤2048 chars).
+  manage_url: string | null;
   created_at: string; // ISO datetime
   updated_at: string;
 }
@@ -58,6 +61,8 @@ export interface SubscriptionCreateInput {
   next_renewal_date?: string | null;
   status?: SubscriptionStatus;
   notes?: string | null;
+  // Optional provider manage/cancel link. null clears it; omit to leave unchanged.
+  manage_url?: string | null;
 }
 
 // Partial update: every field optional; only what changes is sent.

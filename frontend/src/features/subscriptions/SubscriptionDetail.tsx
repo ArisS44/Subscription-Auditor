@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Pencil } from 'lucide-react';
+import { ChevronLeft, ExternalLink, Pencil } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-context';
 import { useSubscription, type Subscription } from '@/hooks/useSubscriptions';
 import { formatDate } from '@/lib/format';
@@ -129,6 +129,23 @@ export function SubscriptionDetail() {
             </DetailRow>
             <DetailRow label={t('subscriptions.detail.created')}>
               {formatDate(detail.created_at, i18n.language)}
+            </DetailRow>
+            <DetailRow label={t('subscriptions.detail.manageUrl')}>
+              {detail.manage_url ? (
+                <a
+                  href={detail.manage_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex max-w-xs items-center gap-1 truncate text-primary underline-offset-4 hover:underline"
+                >
+                  <span className="truncate">{t('subscriptions.detail.manageUrlLink')}</span>
+                  <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+                </a>
+              ) : (
+                <span className="font-normal text-muted-foreground">
+                  {t('subscriptions.detail.notSet')}
+                </span>
+              )}
             </DetailRow>
             <DetailRow label={t('subscriptions.detail.notes')}>
               {detail.notes ? (

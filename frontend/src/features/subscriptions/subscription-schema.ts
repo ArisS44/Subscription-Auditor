@@ -20,10 +20,23 @@ export const CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD'] as c
 // Length/precision caps mirror the backend model exactly.
 const NAME_MAX = 200;
 const NOTES_MAX = 2000;
+const MANAGE_URL_MAX = 2048; // matches _MANAGE_URL_MAX in the backend model
 const PRICE_MAX = 99_999_999.99; // NUMERIC(10,2)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Non-negative, up to 2 decimal places. No leading minus ⇒ negatives rejected.
 const PRICE_RE = /^\d+(\.\d{1,2})?$/;
+
+// Accept only well-formed http(s) URLs — mirrors the backend's AnyHttpUrl check,
+// which rejects other schemes (e.g. javascript:, ftp:). UX-only; the backend
+// re-validates and is the real trust boundary.
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 // Empty string is the "no category" sentinel in the form (the <select> can't hold
 // null cleanly); it is mapped back to null when building the API payload.
@@ -54,6 +67,16 @@ export function createSubscriptionSchema(t: TFunction) {
     start_date: z.string().min(1, e('startDateRequired')).regex(DATE_RE, e('dateInvalid')),
     next_renewal_date: z.union([z.string().regex(DATE_RE, e('dateInvalid')), z.literal('')]),
     notes: z.string().max(NOTES_MAX, e('notesTooLong')),
+    // Optional provider manage/cancel link. Empty is allowed (clears it); a
+    // non-empty value must be a well-formed http(s) URL within the length cap.
+    manage_url: z.union([
+      z.literal(''),
+      z
+        .string()
+        .trim()
+        .max(MANAGE_URL_MAX, e('manageUrlTooLong'))
+        .refine(isHttpUrl, e('manageUrlInvalid')),
+    ]),
   });
 }
 
@@ -73,5 +96,8 @@ export function formValuesToPayload(values: SubscriptionFormValues): Subscriptio
     start_date: values.start_date,
     next_renewal_date: values.next_renewal_date ? values.next_renewal_date : null,
     notes: values.notes.trim() ? values.notes.trim() : null,
+    // Empty → null so an existing link can be cleared; the backend treats null as
+    // "no link".
+    manage_url: values.manage_url.trim() ? values.manage_url.trim() : null,
   };
 }

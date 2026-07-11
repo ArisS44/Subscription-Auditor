@@ -142,7 +142,10 @@
         "startDate": "Start date",
         "nextRenewalDate": "Next renewal date",
         "nextRenewalHint": "Leave empty to calculate it from the start date and billing cycle.",
-        "notes": "Notes"
+        "notes": "Notes",
+        "manageUrl": "Manage / cancel link",
+        "manageUrlPlaceholder": "https://provider.com/account/billing",
+        "manageUrlHint": "Optional. A link to where you manage or cancel this subscription."
       },
       "categoryNone": "Uncategorized",
       "datePlaceholder": "Pick a date",
@@ -159,7 +162,9 @@
         "currencyInvalid": "Select a valid currency.",
         "startDateRequired": "Start date is required.",
         "dateInvalid": "Enter a valid date.",
-        "notesTooLong": "Notes are too long."
+        "notesTooLong": "Notes are too long.",
+        "manageUrlInvalid": "Enter a valid http(s) URL.",
+        "manageUrlTooLong": "This link is too long."
       }
     },
     "cancelDialog": {
@@ -200,6 +205,8 @@
       "startDate": "Start date",
       "nextRenewal": "Next renewal",
       "created": "Added",
+      "manageUrl": "Manage / cancel",
+      "manageUrlLink": "Open provider page",
       "notes": "Notes",
       "noNotes": "No notes.",
       "notSet": "Not set",
@@ -229,6 +236,17 @@
     "currency": {
       "label": "Currency",
       "all": "All (per currency)"
+    },
+    "convert": {
+      "label": "Convert to",
+      "total": "Total monthly burn",
+      "estimate": "estimate",
+      "estimateTooltip": "Converted at recent exchange rates — an approximation, not an exact figure.",
+      "loading": "Converting…",
+      "unavailable": "Currency conversion is temporarily unavailable."
+    },
+    "roadmap": {
+      "teaser": "On the way: invoice import, a browser extension to track how much you actually use your subscriptions, and renewal reminders."
     },
     "chartType": {
       "label": "Chart type",

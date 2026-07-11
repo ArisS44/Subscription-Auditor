@@ -53,6 +53,7 @@ function toFormValues(subscription?: Subscription): SubscriptionFormValues {
       start_date: todayIso(),
       next_renewal_date: '',
       notes: '',
+      manage_url: '',
     };
   }
   return {
@@ -64,6 +65,7 @@ function toFormValues(subscription?: Subscription): SubscriptionFormValues {
     start_date: subscription.start_date,
     next_renewal_date: subscription.next_renewal_date ?? '',
     notes: subscription.notes ?? '',
+    manage_url: subscription.manage_url ?? '',
   };
 }
 
@@ -286,6 +288,22 @@ export function SubscriptionFormDialog({
               <FieldLabel htmlFor="sub-notes">{t('subscriptions.form.fields.notes')}</FieldLabel>
               <Textarea id="sub-notes" rows={3} {...register('notes')} />
               <FieldError errors={[errors.notes]} />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="sub-manage-url">
+                {t('subscriptions.form.fields.manageUrl')}
+              </FieldLabel>
+              <Input
+                id="sub-manage-url"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                placeholder={t('subscriptions.form.fields.manageUrlPlaceholder')}
+                {...register('manage_url')}
+              />
+              <FieldDescription>{t('subscriptions.form.fields.manageUrlHint')}</FieldDescription>
+              <FieldError errors={[errors.manage_url]} />
             </Field>
 
             {errors.root && (
