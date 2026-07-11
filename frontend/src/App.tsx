@@ -7,8 +7,9 @@ import { OverviewPage } from '@/features/dashboard/pages/OverviewPage';
 import { SubscriptionsPage } from '@/features/dashboard/pages/SubscriptionsPage';
 import { SubscriptionDetailPage } from '@/features/dashboard/pages/SubscriptionDetailPage';
 import { SettingsPage } from '@/features/dashboard/pages/SettingsPage';
+import { ChatPage } from '@/features/dashboard/pages/ChatPage';
 import { ComingSoonPage } from '@/features/dashboard/pages/ComingSoonPage';
-import { BarChart3, MessageSquare } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 import Landing from '@/routes/Landing';
 import Login from '@/routes/auth/Login';
 import Signup from '@/routes/auth/Signup';
@@ -52,16 +53,7 @@ function App() {
                   />
                 }
               />
-              <Route
-                path="chat"
-                element={
-                  <ComingSoonPage
-                    icon={MessageSquare}
-                    titleKey="dashboard.nav.chat"
-                    bodyKey="dashboard.comingSoon.chat"
-                  />
-                }
-              />
+              <Route path="chat" element={<ChatPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
           </Routes>

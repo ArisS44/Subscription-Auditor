@@ -20,6 +20,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '', labelKey: 'dashboard.nav.overview', icon: LayoutDashboard, end: true },
   { to: 'subscriptions', labelKey: 'dashboard.nav.subscriptions', icon: CreditCard },
   { to: 'reports', labelKey: 'dashboard.nav.reports', icon: BarChart3, placeholder: true },
-  { to: 'chat', labelKey: 'dashboard.nav.chat', icon: MessageSquare, placeholder: true },
+  { to: 'chat', labelKey: 'dashboard.nav.chat', icon: MessageSquare },
   { to: 'settings', labelKey: 'dashboard.nav.settings', icon: Settings },
 ];

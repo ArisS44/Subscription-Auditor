@@ -240,7 +240,7 @@
     "convert": {
       "label": "Convert to",
       "total": "Total monthly burn",
-      "estimate": "estimate",
+      "estimate": "Estimate",
       "estimateTooltip": "Converted at recent exchange rates — an approximation, not an exact figure.",
       "loading": "Converting…",
       "unavailable": "Currency conversion is temporarily unavailable."
@@ -300,6 +300,37 @@
     "loading": "Loading your profile…",
     "error": "Could not load your profile. Please try again.",
     "logout": "Log out"
+  },
+  "chat": {
+    "empty": {
+      "title": "Ask Apollon anything",
+      "body": "Ask about your subscriptions, spending trends, or where you could cut back. Answers are grounded in your own data."
+    },
+    "thinking": "Thinking…",
+    "usingTool": "Looking up {{tool}}…",
+    "loadingHistory": "Loading conversation…",
+    "structuredPlaceholder": "{{count}} chart or table (coming soon)",
+    "composer": {
+      "placeholder": "Message Apollon…",
+      "send": "Send"
+    },
+    "sidebar": {
+      "heading": "Chats",
+      "new": "New chat",
+      "loading": "Loading chats…",
+      "empty": "No chats yet.",
+      "untitled": "Untitled chat",
+      "delete": "Delete chat"
+    },
+    "deleteDialog": {
+      "title": "Delete chat?",
+      "body": "This permanently deletes the chat and all its messages. This cannot be undone.",
+      "confirm": "Delete",
+      "cancel": "Cancel"
+    },
+    "error": {
+      "network": "Something went wrong reaching the assistant. Please try again."
+    }
   },
   "auth": {
     "email": "Email",
