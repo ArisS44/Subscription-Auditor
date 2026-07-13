@@ -639,3 +639,19 @@ whole request. The fix: sanitize the LLM-facing schema by recursively stripping 
 sending. This is safe because `tools.dispatch` re-validates every payload against the *real* Pydantic model —
 the schema sent to the model is only a hint. The stubbed unit tests couldn't catch this; the live end-to-end
 check did. Look here: `_provider_safe_schema` in `backend/app/services/tools.py`.
+
+### Gotcha: Groq maps a token-rate-limit to HTTP 413, not just 429
+A "413 Request Entity Too Large" from Groq on a *tiny* second chat turn was not outbound bloat: the whole
+tool-schema envelope is only ~9KB and a realistic turn-2 payload ~9.5KB (~2.4K tokens), which returns 200.
+Groq's free `on_demand` tier caps tokens-per-minute (TPM = 12,000 for `llama-3.3-70b-versatile`) and
+tokens-per-day (TPD = 100,000); when a request would exceed the *per-minute* budget it answers **413**
+"Request too large ... on tokens per minute (TPM)", and when the *daily* budget is spent it answers **429**
+"tokens per day (TPD)". Because one chat turn can fire several tool-loop iterations (each re-sends system +
+history + all tool schemas), a burst of turns inside one minute exhausts the 12K TPM window and the *next*
+turn 413s regardless of its own size. The `x-ratelimit-*` response headers report the real budgets/resets.
+Fix was graceful degradation, not shrinking the request: the adapter now detects 413/429 and yields a
+`StreamError(reason="rate_limited")` with neutral user copy (never a raw HTTP status/body — that would leak
+provider internals *and* request content), which the chat layer surfaces as a retriable error event. Proven
+by exhausting the live budget (root-cause) then a *paced* multi-turn run staying under TPM (no 413). Look
+here: the non-200 branch of `GroqAdapter.stream` and `StreamError.reason` in `backend/app/services/llm.py`,
+and the `StreamError` handling in `backend/app/services/chat.py`.

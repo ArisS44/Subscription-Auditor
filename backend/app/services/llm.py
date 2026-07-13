@@ -90,9 +90,14 @@ class StreamDone:
 @dataclass
 class StreamError:
     """Terminal error event — the stream yields this and stops rather than
-    raising mid-iteration, so callers handle provider failures uniformly."""
+    raising mid-iteration, so callers handle provider failures uniformly.
+
+    `reason` is a stable, provider-neutral machine tag (e.g. "rate_limited")
+    the chat layer maps to user-facing copy; `message` is a safe fallback that
+    never leaks provider internals or request/response content."""
 
     message: str
+    reason: str = "llm_error"
 
 
 LLMEvent = TextDelta | ToolCall | StreamDone | StreamError
@@ -234,8 +239,27 @@ class GroqAdapter(LLMAdapter):
         try:
             async with client.stream("POST", url, headers=self._headers(), json=payload) as resp:
                 if resp.status_code != 200:
+                    # Drain the body so the connection can be reused; never log or
+                    # surface it (it can echo request content). Groq maps a
+                    # token-rate-limit breach (per-minute/per-day budget) to 413
+                    # "Request too large" and 429 — distinct from a genuine
+                    # oversize payload, but both mean "back off and retry later",
+                    # so the caller degrades gracefully instead of showing a raw
+                    # HTTP status.
                     await resp.aread()
-                    yield StreamError(f"LLM provider returned HTTP {resp.status_code}")
+                    if resp.status_code in (429, 413):
+                        yield StreamError(
+                            "The assistant is busy right now. Please try again in a moment.",
+                            reason="rate_limited",
+                        )
+                    else:
+                        yield StreamError("The assistant is temporarily unavailable.")
+                    logger.warning(
+                        "llm stream non-200 provider=%s model=%s status=%d",
+                        settings.llm_provider,
+                        self.model,
+                        resp.status_code,
+                    )
                     return
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data:"):

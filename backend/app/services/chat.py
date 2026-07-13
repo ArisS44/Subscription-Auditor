@@ -117,7 +117,7 @@ async def stream_turn(
                 round_tool_calls.append(event)
             elif isinstance(event, llm.StreamError):
                 stream_failed = True
-                yield {"type": "error", "reason": "llm_error", "message": event.message}
+                yield {"type": "error", "reason": event.reason, "message": event.message}
 
         if stream_failed:
             break

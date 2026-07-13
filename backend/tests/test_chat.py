@@ -259,6 +259,91 @@ async def test_text_only_turn_executes_no_tools(db_pool, user_a, monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# Grounding (symptom 1): a write request missing required details must produce a
+# clarifying question, never a fabricated success. The loop only ever runs a tool
+# the model actually emits — so when a prompt-compliant model asks for the missing
+# name/price/billing details instead of calling add_subscription, no subscription
+# is created and no success is persisted.
+# --------------------------------------------------------------------------
+async def test_missing_details_add_asks_and_creates_nothing(db_pool, user_a, monkeypatch):
+    uid, token = user_a
+    claims = verify_token(token)
+    conv = await _new_conversation(claims, uid)
+    scripted = _ScriptedLLM(
+        [[llm.TextDelta("Sure — what's the name, price, and billing cycle?"), llm.StreamDone()]]
+    )
+    _patch_llm(monkeypatch, scripted)
+
+    await _collect(chat_svc.stream_turn(claims, conv, "I want to add a subscription"))
+    msgs = await _messages(claims, conv)
+    # Clarifying question only: user + assistant, no tool ran, so nothing was added.
+    assert [m["role"] for m in msgs] == ["user", "assistant"]
+    assert not any(m["role"] == "tool" for m in msgs)
+    async with rls_connection(claims) as conn:
+        sub_count = await conn.fetchval(
+            "SELECT count(*) FROM subscriptions WHERE user_id = $1", uid
+        )
+    assert sub_count == 0  # no fabricated subscription persisted
+    await _cleanup_usage(uid)
+
+
+# --------------------------------------------------------------------------
+# Symptom 3: a provider rate-limit (413/429 → StreamError reason="rate_limited")
+# degrades to a clean, retriable error event — never a raw HTTP status — and ends
+# the turn cleanly.
+# --------------------------------------------------------------------------
+async def test_rate_limited_stream_degrades_cleanly(db_pool, user_a, monkeypatch):
+    uid, token = user_a
+    claims = verify_token(token)
+    conv = await _new_conversation(claims, uid)
+    scripted = _ScriptedLLM(
+        [
+            [
+                llm.StreamError(
+                    "The assistant is busy right now. Please try again in a moment.",
+                    reason="rate_limited",
+                ),
+                llm.StreamDone(),
+            ]
+        ]
+    )
+    _patch_llm(monkeypatch, scripted)
+
+    events = await _collect(chat_svc.stream_turn(claims, conv, "how am I doing?"))
+    err = next(e for e in events if e["type"] == "error")
+    assert err["reason"] == "rate_limited"
+    assert "413" not in err["message"] and "429" not in err["message"]
+    assert events[-1]["type"] == "done"
+    # Only the user message persisted; no assistant/tool rows from a failed turn.
+    msgs = await _messages(claims, conv)
+    assert all(m["role"] == "user" for m in msgs)
+    await _cleanup_usage(uid)
+
+
+# --------------------------------------------------------------------------
+# Symptom 3 (bloat check): three real turns in one conversation each complete and
+# the replayed outbound history stays bounded by the window — so the request never
+# grows unboundedly across turns (the shape that would eventually trip a 413).
+# --------------------------------------------------------------------------
+async def test_three_turns_replay_history_stays_bounded(db_pool, user_a, monkeypatch):
+    uid, token = user_a
+    claims = verify_token(token)
+    conv = await _new_conversation(claims, uid)
+    scripted = _ScriptedLLM([[llm.TextDelta(f"reply {i}"), llm.StreamDone()] for i in range(3)])
+    _patch_llm(monkeypatch, scripted)
+
+    for i in range(3):
+        events = await _collect(chat_svc.stream_turn(claims, conv, f"turn {i}"))
+        assert events[-1]["type"] == "done"
+
+    assert len(scripted.calls) == 3  # one LLM call per turn, no runaway loop
+    # Every replayed window is capped — history does not grow without bound.
+    for call in scripted.calls:
+        assert len(call) <= settings.chat_history_window
+    await _cleanup_usage(uid)
+
+
+# --------------------------------------------------------------------------
 # HTTP: auth, 404, and incremental SSE with the no-buffering headers.
 # --------------------------------------------------------------------------
 def _auth(token: str) -> dict:

@@ -134,6 +134,32 @@ async def test_stream_yields_error_event_on_http_error():
     )
     assert len(events) == 1
     assert events[0].__class__.__name__ == "StreamError"
+    assert events[0].reason == "llm_error"
+    # No raw provider status or body leaks into the user-facing message.
+    assert "500" not in events[0].message and "boom" not in events[0].message
+
+
+@pytest.mark.parametrize("status", [413, 429])
+async def test_stream_maps_rate_limit_status_to_reason(status: int):
+    # Groq returns 413 "Request too large ... on tokens per minute (TPM)" or 429
+    # when a token-budget window is exhausted; both must degrade as a retriable
+    # rate-limit, never as a raw HTTP status shown to the user.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status,
+            json={"error": {"message": "Request too large ... service tier on_demand on TPM"}},
+        )
+
+    events = await _collect(
+        _adapter().stream([Message(role="user", content="hi")], None, client=_mock_client(handler))
+    )
+    assert len(events) == 1
+    err = events[0]
+    assert err.__class__.__name__ == "StreamError"
+    assert err.reason == "rate_limited"
+    # The provider status code and body never reach the user-facing message.
+    assert str(status) not in err.message
+    assert "TPM" not in err.message and "on_demand" not in err.message
 
 
 # ---------------------------------------------------------------------------
