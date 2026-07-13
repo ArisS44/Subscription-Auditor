@@ -5,6 +5,105 @@
 
 ---
 
+## 2026-07-13 — LLM provider migration: Groq → Gemini Flash (Claude Haiku 4.5 fallback)
+
+**Decision:** Migrate the chat engine's default LLM provider from Groq (`llama-3.3-70b-versatile`) to
+**Gemini Flash**, budgeted at ~€10. If Gemini's tool-calling quality disappoints in practice, the fallback
+is **Claude Haiku 4.5** — both are config-level swaps behind the `llm.py` provider-agnostic wrapper (per
+the 2026-07-09 "LLM layer" decision), not an engine rewrite.
+
+**Why:** Task 1.6 root-caused the turn-2 HTTP 413 bug to Groq's free `on_demand` tier — `llama-3.3-70b-
+versatile` is capped at 12,000 tokens/minute and 100,000/day. Because a single chat turn can fire several
+tool-loop iterations (each resending system prompt + history + tool schemas), a handful of quick turns
+exhausts the per-minute window and the *next* turn 413s regardless of its own size. This makes real
+multi-user testing impractical on Groq's free tier; the graceful `reason="rate_limited"` handling Task 1.6
+added is the right degradation behavior but doesn't fix the underlying capacity ceiling.
+
+**How to apply:** add a Gemini adapter to `llm.py` alongside the existing Groq adapter; extend
+`tools.py::_provider_safe_schema` for Gemini's stricter function-calling schema (flatten `anyOf`/`$ref`,
+inline `$defs` — safe because `tools.dispatch` independently re-validates every payload against the real
+Pydantic model regardless of what schema was sent to the provider). Live-verify all 10 registered tools
+fire correctly against Gemini, plus re-check the three Task 1.6 symptoms don't regress on the new
+provider. Confirm multi-turn rate-limit behavior no longer hits a wall under the paid tier. If Gemini's
+tool-calling proves unreliable in that verification pass, fall back to Claude Haiku 4.5 instead of
+persisting with Gemini.
+
+## 2026-07-13 — New sub-processor (Google) requires a Privacy Policy update
+
+**Decision:** The Gemini Flash migration above adds **Google** as a sub-processor (previously: Supabase,
+Groq, Azure). The Privacy Policy must be updated to disclose this **in the same task as the migration**,
+not deferred.
+
+**Why:** GDPR requires disclosing all sub-processors handling user data; `CLAUDE.md`'s Privacy &
+compliant non-negotiable already commits to this ("ship a Privacy Policy disclosing data collected +
+sub-processors"). Shipping a provider swap without updating that disclosure would leave a live surface
+non-compliant, which this project's standards treat as equivalent to shipping security half-done.
+
+**How to apply:** whichever page/doc currently lists Supabase/Groq/Azure as sub-processors gains Google
+(Gemini) alongside them (or replacing Groq's listing if Groq is fully retired rather than kept as a
+documented fallback path). Verify this ships in the same commit/PR as the adapter change, not as a
+follow-up.
+
+---
+
+## 2026-07-09 — Session 3 scope boundary + chatbot capability roadmap across sessions
+
+**Decision:** The chatbot is a **conversational front-end over the same services the dashboard uses** —
+it has no special powers; its reach = (tools registered in the in-process registry) × (data available).
+Because tools live in a registry, later sessions make the bot smarter by *registering more tools into the
+same chat loop*, with no rewrite of the engine. **Not an MCP server** — an in-process, provider-neutral
+tool registry validated by Pydantic (single-agent tool-calling, per spec §3.3; no MCP network/auth
+surface, nothing to reuse across external clients).
+
+**Capability roadmap (which session gives the bot which ability):**
+- **Session 3 — the "hands":** converse about subscriptions (bilingual, on-topic, refusals); full CRUD via
+  chat (add / update / mark-cancelled / delete); query + analytics via chat (reuses S2 analytics); change
+  settings via chat (`PATCH /me`); set the optional user-provided `manage_url` when adding; **inline
+  charts + tables in chat** (`render_chart` / `render_table`, reusing S2 Recharts); **drive onboarding**
+  (same bot, onboarding system prompt).
+- **Session 4 — the "brain":** guidance ("how do I cancel Netflix" — curated `service_guides` → LLM
+  fallback via `get_subscription_guide`); recommendations ("should I keep ChatGPT?" via
+  `get_recommendation`); surface monthly insights. The "help cancel/subscribe" and "advise" abilities are
+  Session 4, because they need the curated table + recommendation logic — in S3 the bot can *converse* and
+  *act* on a subscription but not yet *advise*.
+- **Session 6 — "sight":** richer usage / cost-per-hour answers and graphs, once real extension usage data
+  exists.
+
+**Chat memory:** three distinct memories — (1) **conversation memory** = the `conversations`/`messages`
+tables persisted and replayed to the LLM as a **sliding window of ~20 messages** (spec §12.6); build this.
+(2) The user's actual data is **NOT** held in chat context — it's queried live via tools every turn (DB is
+source of truth). (3) **No** cross-conversation long-term memory (memory-tool pattern is out of scope).
+
+**Graph variety is gated by available data:** in Session 3 `render_chart` can honestly draw only
+spend-by-category (bar/pie), top-expenses (bar/table), monthly-burn/totals, and upcoming renewals
+(table/list). Trend-over-time (needs historical snapshots) and usage/cost-per-hour/heatmap (needs
+extension data) unlock in Sessions 4/6 — the tool is general, the honest chart set grows with the data.
+
+**Session 3 IN / OUT (confirmed with User):**
+- **IN:** the chat engine (LLM wrapper, tool registry, SSE streaming, conversation/message persistence,
+  auto-titling, bilingual on-topic system prompt, chat rate limiting); CRUD + query/analytics + settings
+  tools; optional per-sub `manage_url` (user-provided; **Option A** — curated auto-fill + LLM discovery
+  stays Session 4); **minimal inline visuals** (`render_table` + spend-by-category chart to start);
+  **onboarding shell** (welcome → choose-method → chat/manual/skip → done) with the extension and push
+  steps as clearly-labeled "coming soon" stubs (those features are Sessions 6/5); the LLM abstraction and
+  security caps from the entry below.
+- **OUT (deferred):** `get_subscription_guide` + `get_recommendation` + curated `service_guides` seed +
+  monthly reports (Session 4); real usage graphs (Session 6); richer chart types until their data exists.
+- **Pulled into Session 3 as an added self-contained slice:** **live currency conversion** — opt-in
+  "convert to [currency]" control, backed by a **lazy-refresh FX cache with a ~12h staleness TTL** (fetch
+  on the first request after the TTL expires — **no APScheduler**, deliberately avoiding the unresolved
+  scheduler single-owner question until Session 5; same user-visible accuracy as "refresh a couple times a
+  day"). This supersedes the "post-deploy fast-follow" timing in the 2026-07-08 entry below — the design
+  (per-currency stays default, conversion is opt-in and labeled an estimate) is unchanged.
+
+**Why:** keeps Session 3 shippable and fully secured while making the model choice ("one provider-agnostic
+wrapper, Groq by default") and the "get smarter over time via the tool registry" roadmap explicit, so
+later sessions extend the same engine instead of re-litigating its shape. Folding currency conversion in
+now (rather than waiting) was judged low-risk once the FX design avoided the scheduler question, and kept
+the session's User-facing surface area from feeling arbitrarily split across two deploys.
+
+---
+
 ## 2026-07-08 — Live currency conversion: scoped as an opt-in fast-follow after Session 2's deploy
 
 **Decision:** Session 2 ships with **no live FX conversion** — per-currency grouping (never converted) stays

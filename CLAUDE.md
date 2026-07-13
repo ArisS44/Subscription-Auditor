@@ -122,4 +122,11 @@ Apply the **Secure** and **Private & compliant** non-negotiables above. Always-o
 
 - When introducing a table scoped by `user_id`, prove isolation with a **real-DB cross-user RLS-denial test** (a second user cannot read or modify the first user's rows), following the existing pattern in `backend/tests/test_rls.py`. This is not optional — RLS is the second security wall and must be verified, not assumed.
 
+## AI chatbot & LLM integration (any Task on the chat/LLM surface)
+
+- **Route every model access through `backend/app/services/llm.py`.** Never call a provider SDK or hardcode a provider/model ID anywhere else; provider, model, and key come from environment. Add new capabilities by **registering a tool in the tool registry** — never grow the chat loop with a hardcoded tool switch (concrete application of the "LLM tools live in a registry" and "config from environment" non-negotiables above).
+- **On this surface the Secure non-negotiables apply with full force.** Validate every LLM tool-call payload against its Pydantic schema **before** execution — a malformed call returns a clean error back to the model, never a partial or raw execution; never let raw model output trigger a privileged action or reach the DB unvalidated; render any model- or DB-sourced content with **no raw HTML** — sanitize markdown via DOMPurify with a tag allowlist and render structured chart/table payloads through typed components, never `dangerouslySetInnerHTML`.
+- **Ground every displayed figure in real data.** Numbers and rows shown in chat (charts, tables, analytics answers) must come from tool results computed against the database — never from values the model produced free-form.
+- **Never log message content or prompt/response text** (the "no PII/message content in logs" rule, with force here); per-call token-usage counts are fine.
+
 } //APM_RULES
