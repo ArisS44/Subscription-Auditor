@@ -309,6 +309,226 @@ class GroqAdapter(LLMAdapter):
         return text, usage
 
 
+class GeminiAdapter(LLMAdapter):
+    """Google Gemini via the Generative Language REST API (over httpx, like Groq,
+    so the three translations stay explicit and SDK-free).
+
+    Gemini differs from the OpenAI shape in ways this adapter absorbs so no caller
+    changes: there is no `system` role (the system prompt goes in a top-level
+    `system_instruction`); the assistant role is `model`; a tool result re-enters
+    as a `functionResponse` part inside a `user` turn (matched to its call by
+    *name*, since Gemini function calls carry no id); and the stream delivers each
+    tool call whole in one `functionCall` part rather than as fragments. The
+    provider-strict tool schema is produced upstream by `tools.tool_definitions`
+    ("gemini") — this adapter only wraps it in the `function_declarations`
+    envelope."""
+
+    default_base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+    def _headers(self) -> dict[str, str]:
+        # API key travels as a header, never in the URL/query — so it can't land
+        # in access logs or error traces the way a `?key=` param would.
+        return {"x-goog-api-key": self._api_key, "Content-Type": "application/json"}
+
+    def format_tools(self, tools: Sequence[ToolDef]) -> list[dict[str, Any]] | None:
+        if not tools:
+            return None
+        decls: list[dict[str, Any]] = []
+        for t in tools:
+            decl: dict[str, Any] = {"name": t.name, "description": t.description}
+            # Omit `parameters` entirely for a no-arg tool: an empty properties
+            # object trips some Gemini schema validations.
+            if t.parameters.get("properties"):
+                decl["parameters"] = t.parameters
+            decls.append(decl)
+        return [{"function_declarations": decls}]
+
+    @staticmethod
+    def _system_instruction(messages: Sequence[Message]) -> dict[str, Any] | None:
+        texts = [m.content for m in messages if m.role == "system" and m.content]
+        if not texts:
+            return None
+        return {"parts": [{"text": "\n\n".join(texts)}]}
+
+    def format_messages(self, messages: Sequence[Message]) -> list[dict[str, Any]]:
+        # Walk in order, mapping each assistant tool-call id -> its tool name, so a
+        # later role="tool" result (which carries only the id) can be re-emitted as
+        # a Gemini functionResponse keyed by name.
+        id_to_name: dict[str, str] = {}
+        contents: list[dict[str, Any]] = []
+        for m in messages:
+            if m.role == "system":
+                continue
+            if m.role == "tool":
+                name = id_to_name.get(m.tool_call_id or "", "tool")
+                contents.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"functionResponse": {"name": name, "response": _as_object(m.content)}}
+                        ],
+                    }
+                )
+                continue
+            if m.role == "assistant":
+                parts: list[dict[str, Any]] = []
+                if m.content:
+                    parts.append({"text": m.content})
+                for tc in m.tool_calls or []:
+                    fn = tc.get("function", {})
+                    fn_name = fn.get("name", "")
+                    if tc.get("id"):
+                        id_to_name[tc["id"]] = fn_name
+                    parts.append(
+                        {
+                            "functionCall": {
+                                "name": fn_name,
+                                "args": _loads_or_empty(fn.get("arguments")),
+                            }
+                        }
+                    )
+                contents.append({"role": "model", "parts": parts or [{"text": ""}]})
+                continue
+            # user
+            contents.append({"role": "user", "parts": [{"text": m.content or ""}]})
+        return contents
+
+    def _payload(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolDef] | None,
+        *,
+        max_tokens: int | None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"contents": self.format_messages(messages)}
+        system = self._system_instruction(messages)
+        if system is not None:
+            payload["system_instruction"] = system
+        formatted = self.format_tools(tools) if tools else None
+        if formatted:
+            payload["tools"] = formatted
+        if max_tokens is not None:
+            payload["generationConfig"] = {"maxOutputTokens": max_tokens}
+        return payload
+
+    async def stream(
+        self,
+        messages: Sequence[Message],
+        tools: Sequence[ToolDef] | None,
+        *,
+        client: httpx.AsyncClient,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[LLMEvent]:
+        url = f"{self._base_url}/models/{self.model}:streamGenerateContent?alt=sse"
+        payload = self._payload(messages, tools, max_tokens=max_tokens)
+        tool_calls: list[ToolCall] = []
+        usage: Usage | None = None
+        try:
+            async with client.stream("POST", url, headers=self._headers(), json=payload) as resp:
+                if resp.status_code != 200:
+                    # Drain (connection reuse) and never surface the body — it can
+                    # echo request content. RESOURCE_EXHAUSTED (429) and transient
+                    # 503 both mean "back off", so degrade as retriable rather than
+                    # showing a raw status.
+                    await resp.aread()
+                    if resp.status_code in (429, 503):
+                        yield StreamError(
+                            "The assistant is busy right now. Please try again in a moment.",
+                            reason="rate_limited",
+                        )
+                    else:
+                        yield StreamError("The assistant is temporarily unavailable.")
+                    logger.warning(
+                        "llm stream non-200 provider=%s model=%s status=%d",
+                        settings.llm_provider,
+                        self.model,
+                        resp.status_code,
+                    )
+                    return
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if not data:
+                        continue
+                    chunk = json.loads(data)
+                    if chunk.get("usageMetadata"):
+                        usage = _parse_gemini_usage(chunk["usageMetadata"])
+                    for cand in chunk.get("candidates", []):
+                        for part in (cand.get("content") or {}).get("parts", []):
+                            text = part.get("text")
+                            if text:
+                                yield TextDelta(text)
+                            fc = part.get("functionCall")
+                            if fc:
+                                tool_calls.append(
+                                    ToolCall(
+                                        id=f"call_{len(tool_calls)}",
+                                        name=fc.get("name", ""),
+                                        arguments=json.dumps(fc.get("args") or {}),
+                                    )
+                                )
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "llm stream transport error provider=%s: %s", self.model, type(exc).__name__
+            )
+            yield StreamError("LLM provider request failed")
+            return
+
+        for tc in tool_calls:
+            yield tc
+        _log_usage("stream", self.model, usage)
+        yield StreamDone(usage=usage)
+
+    async def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        client: httpx.AsyncClient,
+        max_tokens: int | None = None,
+    ) -> tuple[str, Usage | None]:
+        url = f"{self._base_url}/models/{self.model}:generateContent"
+        payload = self._payload(messages, None, max_tokens=max_tokens)
+        resp = await client.post(url, headers=self._headers(), json=payload)
+        resp.raise_for_status()
+        body = resp.json()
+        candidates = body.get("candidates") or [{}]
+        parts = (candidates[0].get("content") or {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts)
+        usage = _parse_gemini_usage(body["usageMetadata"]) if body.get("usageMetadata") else None
+        _log_usage("complete", self.model, usage)
+        return text, usage
+
+
+def _as_object(content: str | None) -> dict[str, Any]:
+    """A Gemini functionResponse.response must be a JSON object. Our tool results
+    are JSON strings of a dict; parse, wrapping any non-object in `{"result": ...}`."""
+    if not content:
+        return {}
+    try:
+        parsed = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return {"result": content}
+    return parsed if isinstance(parsed, dict) else {"result": parsed}
+
+
+def _loads_or_empty(raw: str | None) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_gemini_usage(raw: dict[str, Any]) -> Usage:
+    return Usage(
+        input_tokens=int(raw.get("promptTokenCount", 0)),
+        output_tokens=int(raw.get("candidatesTokenCount", 0)),
+    )
+
+
 def _accumulate_tool_call(pending: dict[int, dict[str, str]], tc: dict[str, Any]) -> None:
     """Merge one streamed tool-call fragment into the accumulator keyed by index."""
     idx = tc.get("index", 0)
@@ -347,7 +567,7 @@ def _log_usage(kind: str, model: str, usage: Usage | None) -> None:
 # Registry + public API. Callers use only these; the adapter/provider is chosen
 # from config at call time, so changing LLM_PROVIDER/LLM_MODEL needs no code edit.
 # ---------------------------------------------------------------------------
-_ADAPTERS: dict[str, type[LLMAdapter]] = {"groq": GroqAdapter}
+_ADAPTERS: dict[str, type[LLMAdapter]] = {"groq": GroqAdapter, "gemini": GeminiAdapter}
 
 # Prompt for the one-shot title completion. Short, neutral, language-agnostic.
 _TITLE_SYSTEM_PROMPT = (

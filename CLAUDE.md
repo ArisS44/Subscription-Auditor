@@ -48,7 +48,7 @@ multi-agent**.
 
 **Private & compliant (GDPR + ePrivacy)**
 - Data minimization; don't send PII to Groq unless a feature needs it; no PII/message content in logs.
-- Ship a Privacy Policy disclosing data collected + sub-processors (Supabase, Groq, Azure). Explicit
+- Ship a Privacy Policy disclosing data collected + sub-processors (Supabase, Google/Gemini, Groq, Azure). Explicit
   opt-in for push + extension tracking + invoice uploads.
 - Build real data-export + full-deletion (cascade DB **and** Storage). Cookies/local-storage: only
   strictly-necessary (auth token, language) → disclose, no consent banner needed while there's zero

@@ -5,10 +5,12 @@ import pytest
 
 from app.config import settings
 from app.services.llm import (
+    GeminiAdapter,
     GroqAdapter,
     LLMConfigError,
     Message,
     StreamDone,
+    StreamError,
     TextDelta,
     ToolCall,
     ToolDef,
@@ -195,6 +197,155 @@ def test_get_adapter_reads_provider_and_model_from_env(monkeypatch):
     adapter = get_adapter()
     assert isinstance(adapter, GroqAdapter)
     assert adapter.model == "a-different-model"
+
+
+# ---------------------------------------------------------------------------
+# Gemini adapter — the same three translations against Gemini's REST shape.
+# ---------------------------------------------------------------------------
+def _gemini() -> GeminiAdapter:
+    return GeminiAdapter(model="gemini-2.5-flash", api_key="test-key", base_url=None)
+
+
+def test_gemini_format_tools_wraps_function_declarations():
+    schema = {"type": "object", "properties": {"currency": {"type": "string"}}}
+    tools = [ToolDef(name="get_spend", description="Total spend", parameters=schema)]
+
+    result = _gemini().format_tools(tools)
+
+    assert result == [
+        {
+            "function_declarations": [
+                {"name": "get_spend", "description": "Total spend", "parameters": schema}
+            ]
+        }
+    ]
+
+
+def test_gemini_format_tools_omits_parameters_for_no_arg_tool():
+    # An empty properties object trips Gemini's schema check, so parameters is
+    # dropped entirely for a no-arg tool.
+    tools = [ToolDef(name="get_analytics", description="Roll-up", parameters={"type": "object"})]
+    decls = _gemini().format_tools(tools)[0]["function_declarations"]
+    assert "parameters" not in decls[0]
+
+
+def test_gemini_format_messages_splits_system_and_maps_tool_result_by_name():
+    assistant_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "get_spend", "arguments": '{"cur":"USD"}'},
+    }
+    messages = [
+        Message(role="system", content="You are Apollon."),
+        Message(role="user", content="how much?"),
+        Message(role="assistant", content=None, tool_calls=[assistant_call]),
+        Message(role="tool", tool_call_id="call_1", content='{"total": 42}'),
+    ]
+    adapter = _gemini()
+
+    # System is pulled out of contents into a separate instruction block.
+    assert adapter._system_instruction(messages) == {"parts": [{"text": "You are Apollon."}]}
+    contents = adapter.format_messages(messages)
+
+    assert contents[0] == {"role": "user", "parts": [{"text": "how much?"}]}
+    # Assistant tool call -> a model turn with a functionCall part (args as object).
+    assert contents[1] == {
+        "role": "model",
+        "parts": [{"functionCall": {"name": "get_spend", "args": {"cur": "USD"}}}],
+    }
+    # Tool result -> functionResponse keyed by the call's *name* (recovered via id).
+    assert contents[2] == {
+        "role": "user",
+        "parts": [{"functionResponse": {"name": "get_spend", "response": {"total": 42}}}],
+    }
+
+
+async def test_gemini_stream_normalizes_text_toolcall_and_usage():
+    sse = (
+        'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Hel"}]}}]}\n\n'
+        'data: {"candidates":[{"content":{"parts":[{"text":"lo"}]}}]}\n\n'
+        'data: {"candidates":[{"content":{"parts":[{"functionCall":'
+        '{"name":"get_spend","args":{"cur":"USD"}}}]}}]}\n\n'
+        'data: {"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":7}}\n\n'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["x-goog-api-key"] == "test-key"
+        assert "streamGenerateContent" in str(request.url)
+        return httpx.Response(200, text=sse)
+
+    events = await _collect(
+        _gemini().stream(
+            [Message(role="user", content="spend?")], None, client=_mock_client(handler)
+        )
+    )
+
+    assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "Hello"
+    calls = [e for e in events if isinstance(e, ToolCall)]
+    assert len(calls) == 1
+    assert calls[0].name == "get_spend"
+    assert json.loads(calls[0].arguments) == {"cur": "USD"}
+    done = events[-1]
+    assert isinstance(done, StreamDone)
+    assert (done.usage.input_tokens, done.usage.output_tokens) == (11, 7)
+
+
+@pytest.mark.parametrize("status", [429, 503])
+async def test_gemini_stream_maps_rate_limit_status_to_reason(status: int):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"error": {"message": "RESOURCE_EXHAUSTED quota"}})
+
+    events = await _collect(
+        _gemini().stream([Message(role="user", content="hi")], None, client=_mock_client(handler))
+    )
+    assert len(events) == 1
+    err = events[0]
+    assert isinstance(err, StreamError)
+    assert err.reason == "rate_limited"
+    assert str(status) not in err.message
+    assert "quota" not in err.message and "RESOURCE_EXHAUSTED" not in err.message
+
+
+async def test_gemini_stream_generic_error_hides_provider_details():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"message": "invalid schema: field boom"}})
+
+    events = await _collect(
+        _gemini().stream([Message(role="user", content="hi")], None, client=_mock_client(handler))
+    )
+    assert len(events) == 1
+    assert isinstance(events[0], StreamError)
+    assert events[0].reason == "llm_error"
+    assert "boom" not in events[0].message and "400" not in events[0].message
+
+
+async def test_gemini_complete_joins_text_parts(monkeypatch):
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(settings, "llm_model", "gemini-2.5-flash")
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "generateContent" in str(request.url)
+        assert "streamGenerateContent" not in str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [{"content": {"parts": [{"text": "Netflix cost review"}]}}],
+                "usageMetadata": {"promptTokenCount": 4, "candidatesTokenCount": 3},
+            },
+        )
+
+    title = await generate_title("How much is Netflix?", client=_mock_client(handler))
+    assert title == "Netflix cost review"
+
+
+def test_get_adapter_selects_gemini_from_env(monkeypatch):
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(settings, "llm_model", "gemini-2.5-flash")
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    adapter = get_adapter()
+    assert isinstance(adapter, GeminiAdapter)
+    assert adapter.model == "gemini-2.5-flash"
 
 
 def test_get_adapter_falls_back_to_groq_key(monkeypatch):

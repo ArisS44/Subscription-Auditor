@@ -102,9 +102,40 @@ def registered_tool_names() -> list[str]:
 # payload against the real Pydantic model, so the LLM-facing schema is only a hint.
 _SCHEMA_KEYS_TO_STRIP = ("pattern", "format")
 
+# Gemini's function-calling `Schema` is a strict OpenAPI-3 subset. It rejects the
+# JSON-Schema constructs Pydantic emits freely: `$ref`/`$defs` indirection, a
+# `{"type": "null"}` branch for nullability, and metadata keys like `title` /
+# `default`. So for Gemini we inline every `$ref`, collapse `anyOf:[X, null]` into
+# `X` with `nullable: true`, and keep only the keys Gemini's Schema recognises.
+# Everything here shapes only what the model *sees* to generate a call; `dispatch`
+# still re-validates the returned payload against the real Pydantic model, so no
+# reshaping can widen what is accepted for execution.
+_GEMINI_SCHEMA_KEYS = frozenset(
+    {
+        "type",
+        "description",
+        "nullable",
+        "enum",
+        "items",
+        "properties",
+        "required",
+        "anyOf",
+        "minItems",
+        "maxItems",
+        "minLength",
+        "maxLength",
+        "minimum",
+        "maximum",
+    }
+)
+
 
 def _provider_safe_schema(node: Any) -> Any:
-    """Recursively drop schema keywords that break strict provider validators."""
+    """Recursively drop schema keywords that break strict provider validators.
+
+    This is the generic (OpenAI-style) pass — safe for any provider. Gemini needs
+    the stricter `_gemini_safe_schema` on top; see `tool_definitions`.
+    """
     if isinstance(node, dict):
         return {
             k: _provider_safe_schema(v) for k, v in node.items() if k not in _SCHEMA_KEYS_TO_STRIP
@@ -114,16 +145,79 @@ def _provider_safe_schema(node: Any) -> Any:
     return node
 
 
-def tool_definitions() -> list[ToolDef]:
+def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a local `#/$defs/Name` pointer to its definition. Only local
+    refs are ever produced by Pydantic here; anything else is treated as absent."""
+    prefix = "#/$defs/"
+    if ref.startswith(prefix):
+        return defs.get(ref[len(prefix) :], {})
+    return {}
+
+
+def _gemini_node(node: Any, defs: dict[str, Any]) -> Any:
+    """Recursively rewrite one schema node into Gemini's Schema subset."""
+    if isinstance(node, list):
+        return [_gemini_node(v, defs) for v in node]
+    if not isinstance(node, dict):
+        return node
+
+    # Inline a `$ref` by resolving it and merging any sibling keys over the target.
+    if "$ref" in node:
+        target = dict(_resolve_ref(node["$ref"], defs))
+        target.update({k: v for k, v in node.items() if k != "$ref"})
+        return _gemini_node(target, defs)
+
+    # Collapse a nullable union (`anyOf` containing a `{"type": "null"}` branch)
+    # into its single non-null branch marked `nullable: true`. A genuine
+    # multi-type union (e.g. number|string) keeps `anyOf` minus the null branch.
+    if "anyOf" in node:
+        branches = node["anyOf"]
+        non_null = [b for b in branches if not (isinstance(b, dict) and b.get("type") == "null")]
+        nullable = len(non_null) != len(branches)
+        carry = {k: v for k, v in node.items() if k not in ("anyOf",)}
+        if len(non_null) == 1:
+            merged = {**non_null[0], **carry}
+            if nullable:
+                merged["nullable"] = True
+            return _gemini_node(merged, defs)
+        rebuilt: dict[str, Any] = {**carry, "anyOf": [_gemini_node(b, defs) for b in non_null]}
+        if nullable:
+            rebuilt["nullable"] = True
+        return {k: v for k, v in rebuilt.items() if k in _GEMINI_SCHEMA_KEYS}
+
+    out: dict[str, Any] = {}
+    for k, v in node.items():
+        if k not in _GEMINI_SCHEMA_KEYS:
+            continue  # drop title/default/$defs/additionalProperties/pattern/format/...
+        if k == "properties" and isinstance(v, dict):
+            out[k] = {pk: _gemini_node(pv, defs) for pk, pv in v.items()}
+        else:
+            out[k] = _gemini_node(v, defs)
+    return out
+
+
+def _gemini_safe_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite a full Pydantic JSON Schema into Gemini's function-calling subset:
+    inline `$defs`/`$ref`, flatten nullable `anyOf` unions, keep only supported
+    keys. Verified against the real API — adapt the keyset to whatever Gemini
+    actually rejects rather than assuming this list is exhaustive."""
+    defs = schema.get("$defs", {})
+    return _gemini_node(schema, defs)
+
+
+def tool_definitions(provider: str = "") -> list[ToolDef]:
     """The provider-neutral tool definitions for the LLM layer — each tool's
     Pydantic model rendered as JSON Schema, sanitized to a provider-safe subset.
-    The adapter wraps these per provider."""
+    Gemini gets the stricter rewrite; every other provider gets the generic pass.
+    The adapter wraps the result in its own envelope."""
+    gemini = provider.lower() == "gemini"
+
+    def shape(model: type[BaseModel]) -> dict[str, Any]:
+        raw = model.model_json_schema()
+        return _gemini_safe_schema(raw) if gemini else _provider_safe_schema(raw)
+
     return [
-        ToolDef(
-            name=s.name,
-            description=s.description,
-            parameters=_provider_safe_schema(s.args_model.model_json_schema()),
-        )
+        ToolDef(name=s.name, description=s.description, parameters=shape(s.args_model))
         for s in _REGISTRY.values()
     ]
 

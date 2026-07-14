@@ -35,6 +35,66 @@ def test_tool_definitions_are_json_schema_objects():
 
 
 # --------------------------------------------------------------------------
+# Gemini schema subset — the stricter rewrite for Gemini's function-calling
+# validator (inline $ref/$defs, flatten nullable anyOf, drop unsupported keys).
+# --------------------------------------------------------------------------
+def _walk(node):
+    """Yield every dict node in a schema tree."""
+    if isinstance(node, dict):
+        yield node
+        for v in node.values():
+            yield from _walk(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _walk(v)
+
+
+def test_gemini_schema_has_no_refs_defs_or_null_type():
+    for d in tool_definitions("gemini"):
+        s = d.parameters
+        for n in _walk(s):
+            assert "$ref" not in n, f"{d.name}: $ref not inlined"
+            assert "$defs" not in n, f"{d.name}: $defs not inlined"
+            # Nullability must be `nullable: true`, never a `{"type": "null"}` branch.
+            assert n.get("type") != "null", f"{d.name}: raw null type survived"
+
+
+def test_gemini_schema_drops_metadata_keywords_but_keeps_field_named_title():
+    defs = {d.name: d for d in tool_definitions("gemini")}
+    # Top-level model `title`/`default` keywords are gone...
+    add = defs["add_subscription"].parameters
+    assert "title" not in add and "default" not in add
+    # ...but a property legitimately *named* "title" (a chart/table title) stays.
+    assert "title" in defs["render_chart"].parameters["properties"]
+
+
+def test_gemini_schema_flattens_nullable_and_inlines_nested_model():
+    defs = {d.name: d for d in tool_definitions("gemini")}
+    # Optional field: anyOf[X, null] -> X + nullable, enum preserved.
+    category = defs["update_subscription"].parameters["properties"]["category"]
+    assert category["nullable"] is True
+    assert category["type"] == "string"
+    assert set(category["enum"]) == {
+        "ai_tool",
+        "streaming",
+        "productivity",
+        "cloud_storage",
+        "other",
+    }
+    # render_chart's ChartPoint $ref is inlined into items.
+    points = defs["render_chart"].parameters["properties"]["points"]
+    assert points["items"]["type"] == "object"
+    assert set(points["items"]["required"]) == {"label", "value"}
+
+
+def test_generic_pass_still_default_for_non_gemini():
+    # The generic (Groq-style) pass leaves anyOf/$defs untouched — proving the
+    # Gemini rewrite is opt-in and doesn't change other providers' schemas.
+    generic = {d.name: d for d in tool_definitions()}["update_subscription"].parameters
+    assert "anyOf" in generic["properties"]["category"]
+
+
+# --------------------------------------------------------------------------
 # Validation / error contract (pure, no DB — malformed payloads never execute)
 # --------------------------------------------------------------------------
 async def test_unknown_tool_returns_clean_error():

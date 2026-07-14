@@ -104,8 +104,9 @@ launch-day afterthought.
   Never log message content or PII at INFO level (already in spec §11).
 - **Lawful basis + transparency.** Ship a **Privacy Policy** page (and reference it at signup) stating:
   what data is collected, why, the legal basis, retention periods, and the third-party **sub-processors**
-  the data flows through — **Supabase** (DB/Auth/Storage), **Groq** (LLM), **Azure** (hosting/logs).
-  Users must be told their subscription/usage text is processed by an LLM provider.
+  the data flows through — **Supabase** (DB/Auth/Storage), **Google** (Gemini, the default LLM provider),
+  **Groq** (LLM, fallback provider), **Azure** (hosting/logs). Users must be told their subscription/usage
+  text is processed by an LLM provider.
 - **Data-subject rights (build the mechanisms, don't just promise them).** Export-all-data (JSON) and
   full account+data deletion are already in scope (Session 7 / spec §10.5) — treat them as compliance
   requirements: deletion must cascade across every table (the schema's `ON DELETE CASCADE` supports

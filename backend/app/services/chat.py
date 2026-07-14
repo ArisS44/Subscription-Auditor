@@ -99,7 +99,7 @@ async def stream_turn(
         for m in window
     ]
     system = build_system_prompt(language, onboarding=onboarding)
-    tool_defs = tools.tool_definitions()
+    tool_defs = tools.tool_definitions(settings.llm_provider)
 
     analytics_called = False  # grounding: a render payload is trusted only if
     last_render_payload = None  # get_analytics was called in this same turn.

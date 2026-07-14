@@ -13,11 +13,14 @@ class Settings(BaseSettings):
 
     # LLM access is entirely environment-driven so switching provider/model is a
     # config change, not a code change. Provider selects the adapter; model and
-    # key are passed through to it. llm_api_key defaults to the Groq key so an
-    # existing GROQ deployment needs no new secret. llm_base_url is an optional
-    # override; when empty the adapter uses the provider's standard endpoint.
-    llm_provider: str = "groq"
-    llm_model: str = "llama-3.3-70b-versatile"
+    # key are passed through to it. Default is Gemini Flash (the Groq free tier's
+    # per-minute token ceiling made real multi-user use impractical); Groq remains
+    # a supported fallback adapter selectable via LLM_PROVIDER=groq. llm_api_key
+    # falls back to the Groq key so an existing Groq deployment needs no new secret.
+    # llm_base_url is an optional override; when empty the adapter uses the
+    # provider's standard endpoint.
+    llm_provider: str = "gemini"
+    llm_model: str = "gemini-2.5-flash"
     llm_api_key: str = ""
     llm_base_url: str = ""
     vapid_private_key: str = ""
