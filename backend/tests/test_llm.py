@@ -288,26 +288,52 @@ def test_gemini_format_messages_replays_thought_signature():
         "thought_signature": "SIG==",
     }
     contents = _gemini().format_messages(
-        [Message(role="assistant", content=None, tool_calls=[assistant_call])]
+        [
+            Message(role="user", content="spend?"),
+            Message(role="assistant", content=None, tool_calls=[assistant_call]),
+        ]
     )
     # The replayed model turn carries the signature back on the functionCall part.
-    assert contents[0]["parts"][0] == {
+    assert contents[1]["parts"][0] == {
         "functionCall": {"name": "get_spend", "args": {}},
         "thoughtSignature": "SIG==",
     }
 
 
-def test_gemini_format_messages_skips_orphaned_tool_result():
-    # When the sliding history window cuts between a functionCall and its result,
-    # the leading tool result is orphaned. It must be dropped, not emitted with a
-    # bogus function name — Gemini 400s a functionResponse that names no in-request
-    # call, which would break the whole (long-conversation) turn.
+def test_gemini_format_messages_drops_leading_non_user_turns():
+    # The sliding window can start mid tool-exchange, leaving leading assistant/tool
+    # turns. Gemini requires contents to begin at a user turn (and functionCall
+    # turns to follow user/functionResponse), so everything before the first genuine
+    # user message is dropped.
+    assistant_call = {
+        "id": "c1",
+        "type": "function",
+        "function": {"name": "get_spend", "arguments": "{}"},
+        "thought_signature": "SIG==",
+    }
     messages = [
-        Message(role="tool", tool_call_id="truncated_call", content='{"total": 42}'),
+        Message(role="assistant", content=None, tool_calls=[assistant_call]),  # truncated head
+        Message(role="tool", tool_call_id="c1", content='{"total": 42}'),  # its result
+        Message(role="user", content="hi"),
+    ]
+    contents = _gemini().format_messages(messages)
+    assert contents == [{"role": "user", "parts": [{"text": "hi"}]}]
+
+
+def test_gemini_format_messages_skips_orphaned_tool_result():
+    # A tool result whose call is absent (name not recoverable) must be dropped, not
+    # emitted with a bogus function name — Gemini 400s a functionResponse that names
+    # no in-request call.
+    messages = [
+        Message(role="user", content="start"),
+        Message(role="tool", tool_call_id="unknown", content='{"total": 42}'),
         Message(role="user", content="and now?"),
     ]
     contents = _gemini().format_messages(messages)
-    assert contents == [{"role": "user", "parts": [{"text": "and now?"}]}]
+    assert contents == [
+        {"role": "user", "parts": [{"text": "start"}]},
+        {"role": "user", "parts": [{"text": "and now?"}]},
+    ]
 
 
 def test_groq_format_messages_strips_thought_signature():

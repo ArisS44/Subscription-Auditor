@@ -371,12 +371,24 @@ class GeminiAdapter(LLMAdapter):
         return {"parts": [{"text": "\n\n".join(texts)}]}
 
     def format_messages(self, messages: Sequence[Message]) -> list[dict[str, Any]]:
+        # Gemini requires the conversation to begin at a user turn and every
+        # functionCall turn to follow a user or functionResponse turn. The sliding
+        # history window can cut mid tool-exchange, leaving leading assistant/tool
+        # turns from a truncated turn; those would violate the rule and 400 the
+        # whole request. Drop everything before the first genuine user message so
+        # the replayed structure is always valid (the current turn's user message
+        # is always present, so this never drops everything). (System turns are
+        # handled separately via `_system_instruction`.)
+        msgs = list(messages)
+        first_user = next((i for i, m in enumerate(msgs) if m.role == "user"), len(msgs))
+        msgs = msgs[first_user:]
+
         # Walk in order, mapping each assistant tool-call id -> its tool name, so a
         # later role="tool" result (which carries only the id) can be re-emitted as
         # a Gemini functionResponse keyed by name.
         id_to_name: dict[str, str] = {}
         contents: list[dict[str, Any]] = []
-        for m in messages:
+        for m in msgs:
             if m.role == "system":
                 continue
             if m.role == "tool":
