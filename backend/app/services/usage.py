@@ -47,3 +47,17 @@ async def enforce_caps(claims: dict) -> str | None:
         if app_count > settings.chat_global_daily_cap:
             return CAP_GLOBAL_DAILY
     return None
+
+
+async def record_token_usage(user_id: str, input_tokens: int, output_tokens: int) -> None:
+    """Persist token usage for the day onto both the per-user and app-wide counters
+    (the request count was already incremented in `enforce_caps`). Best-effort
+    observability for the operator's private usage report — never fails the turn.
+    Aggregate counts only; no message content is stored."""
+    if input_tokens <= 0 and output_tokens <= 0:
+        return
+    today = date.today()
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await usage_db.add_tokens(conn, user_id, today, input_tokens, output_tokens)
+        await usage_db.add_tokens(conn, None, today, input_tokens, output_tokens)

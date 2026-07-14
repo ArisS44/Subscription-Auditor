@@ -15,6 +15,7 @@ The adapter isolates exactly the three things that differ between providers:
       see `stream`.
 """
 
+import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -67,11 +68,17 @@ class TextDelta:
 class ToolCall:
     """A fully-assembled tool call the model wants executed. `arguments` is the
     raw JSON string as produced by the model — the caller validates it against
-    the tool's Pydantic schema before executing anything."""
+    the tool's Pydantic schema before executing anything.
+
+    `thought_signature` is an opaque provider token (Gemini thinking models attach
+    one to each function-call part) that must be replayed verbatim when the call is
+    sent back in history, or the provider rejects the follow-up turn. It is null for
+    providers that don't use it."""
 
     id: str
     name: str
     arguments: str
+    thought_signature: str | None = None
 
 
 @dataclass
@@ -195,7 +202,12 @@ class GroqAdapter(LLMAdapter):
                 continue
             msg: dict[str, Any] = {"role": m.role, "content": m.content}
             if m.tool_calls:
-                msg["tool_calls"] = m.tool_calls
+                # Send only the OpenAI-standard fields; drop any provider-specific
+                # extras persisted for other adapters (e.g. Gemini's thought_signature).
+                msg["tool_calls"] = [
+                    {"id": tc["id"], "type": tc.get("type", "function"), "function": tc["function"]}
+                    for tc in m.tool_calls
+                ]
             out.append(msg)
         return out
 
@@ -309,6 +321,14 @@ class GroqAdapter(LLMAdapter):
         return text, usage
 
 
+# Bounded retry for Gemini's intermittent 503 "model overloaded" (and transient
+# transport errors), which the newest models return under capacity pressure. We
+# retry only while nothing has been streamed yet, so partial output is never
+# replayed. Backoff is multiplied by the attempt number.
+_GEMINI_STREAM_ATTEMPTS = 3
+_GEMINI_STREAM_BACKOFF = 0.6
+
+
 class GeminiAdapter(LLMAdapter):
     """Google Gemini via the Generative Language REST API (over httpx, like Groq,
     so the three translations stay explicit and SDK-free).
@@ -360,7 +380,14 @@ class GeminiAdapter(LLMAdapter):
             if m.role == "system":
                 continue
             if m.role == "tool":
-                name = id_to_name.get(m.tool_call_id or "", "tool")
+                # Skip an orphaned tool result whose function call was truncated out
+                # of the replay window: Gemini requires a functionResponse to name a
+                # call present in the same request, so a dangling one would 400 the
+                # whole turn. (This happens when the sliding history window cuts
+                # between an assistant functionCall and its result.)
+                name = id_to_name.get(m.tool_call_id or "")
+                if name is None:
+                    continue
                 contents.append(
                     {
                         "role": "user",
@@ -379,14 +406,17 @@ class GeminiAdapter(LLMAdapter):
                     fn_name = fn.get("name", "")
                     if tc.get("id"):
                         id_to_name[tc["id"]] = fn_name
-                    parts.append(
-                        {
-                            "functionCall": {
-                                "name": fn_name,
-                                "args": _loads_or_empty(fn.get("arguments")),
-                            }
+                    part: dict[str, Any] = {
+                        "functionCall": {
+                            "name": fn_name,
+                            "args": _loads_or_empty(fn.get("arguments")),
                         }
-                    )
+                    }
+                    # Echo the thinking signature back or Gemini 400s the turn.
+                    sig = tc.get("thought_signature")
+                    if sig:
+                        part["thoughtSignature"] = sig
+                    parts.append(part)
                 contents.append({"role": "model", "parts": parts or [{"text": ""}]})
                 continue
             # user
@@ -421,64 +451,93 @@ class GeminiAdapter(LLMAdapter):
     ) -> AsyncIterator[LLMEvent]:
         url = f"{self._base_url}/models/{self.model}:streamGenerateContent?alt=sse"
         payload = self._payload(messages, tools, max_tokens=max_tokens)
-        tool_calls: list[ToolCall] = []
-        usage: Usage | None = None
-        try:
-            async with client.stream("POST", url, headers=self._headers(), json=payload) as resp:
-                if resp.status_code != 200:
-                    # Drain (connection reuse) and never surface the body — it can
-                    # echo request content. RESOURCE_EXHAUSTED (429) and transient
-                    # 503 both mean "back off", so degrade as retriable rather than
-                    # showing a raw status.
-                    await resp.aread()
-                    if resp.status_code in (429, 503):
-                        yield StreamError(
-                            "The assistant is busy right now. Please try again in a moment.",
-                            reason="rate_limited",
+        for attempt in range(_GEMINI_STREAM_ATTEMPTS):
+            tool_calls: list[ToolCall] = []
+            usage: Usage | None = None
+            streamed_any = False  # once true, never retry — would replay output
+            try:
+                async with client.stream(
+                    "POST", url, headers=self._headers(), json=payload
+                ) as resp:
+                    if resp.status_code != 200:
+                        # Drain (connection reuse) and never surface the body — it
+                        # can echo request content. A 503 is a transient overload:
+                        # retry a bounded number of times before degrading. A 429
+                        # (quota) won't clear on a quick retry, so degrade at once.
+                        await resp.aread()
+                        if resp.status_code == 503 and attempt < _GEMINI_STREAM_ATTEMPTS - 1:
+                            logger.warning(
+                                "llm stream 503 overloaded model=%s retry=%d",
+                                self.model,
+                                attempt + 1,
+                            )
+                            await asyncio.sleep(_GEMINI_STREAM_BACKOFF * (attempt + 1))
+                            continue
+                        if resp.status_code in (429, 503):
+                            yield StreamError(
+                                "The assistant is busy right now. Please try again in a moment.",
+                                reason="rate_limited",
+                            )
+                        else:
+                            yield StreamError("The assistant is temporarily unavailable.")
+                        logger.warning(
+                            "llm stream non-200 provider=%s model=%s status=%d",
+                            settings.llm_provider,
+                            self.model,
+                            resp.status_code,
                         )
-                    else:
-                        yield StreamError("The assistant is temporarily unavailable.")
-                    logger.warning(
-                        "llm stream non-200 provider=%s model=%s status=%d",
-                        settings.llm_provider,
-                        self.model,
-                        resp.status_code,
-                    )
-                    return
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data = line[len("data:") :].strip()
-                    if not data:
-                        continue
-                    chunk = json.loads(data)
-                    if chunk.get("usageMetadata"):
-                        usage = _parse_gemini_usage(chunk["usageMetadata"])
-                    for cand in chunk.get("candidates", []):
-                        for part in (cand.get("content") or {}).get("parts", []):
-                            text = part.get("text")
-                            if text:
-                                yield TextDelta(text)
-                            fc = part.get("functionCall")
-                            if fc:
-                                tool_calls.append(
-                                    ToolCall(
-                                        id=f"call_{len(tool_calls)}",
-                                        name=fc.get("name", ""),
-                                        arguments=json.dumps(fc.get("args") or {}),
+                        return
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[len("data:") :].strip()
+                        if not data:
+                            continue
+                        chunk = json.loads(data)
+                        if chunk.get("usageMetadata"):
+                            usage = _parse_gemini_usage(chunk["usageMetadata"])
+                        for cand in chunk.get("candidates", []):
+                            for part in (cand.get("content") or {}).get("parts", []):
+                                text = part.get("text")
+                                if text:
+                                    streamed_any = True
+                                    yield TextDelta(text)
+                                fc = part.get("functionCall")
+                                if fc:
+                                    streamed_any = True
+                                    tool_calls.append(
+                                        ToolCall(
+                                            id=fc.get("id") or f"call_{len(tool_calls)}",
+                                            name=fc.get("name", ""),
+                                            arguments=json.dumps(fc.get("args") or {}),
+                                            # Preserved so the follow-up turn can
+                                            # replay it (Gemini rejects otherwise).
+                                            thought_signature=part.get("thoughtSignature"),
+                                        )
                                     )
-                                )
-        except httpx.HTTPError as exc:
-            logger.warning(
-                "llm stream transport error provider=%s: %s", self.model, type(exc).__name__
-            )
-            yield StreamError("LLM provider request failed")
-            return
+            except httpx.HTTPError as exc:
+                # Retry a transport error only before anything has streamed, so a
+                # mid-stream drop is surfaced rather than replayed.
+                if not streamed_any and attempt < _GEMINI_STREAM_ATTEMPTS - 1:
+                    logger.warning(
+                        "llm stream transport error model=%s retry=%d: %s",
+                        self.model,
+                        attempt + 1,
+                        type(exc).__name__,
+                    )
+                    await asyncio.sleep(_GEMINI_STREAM_BACKOFF * (attempt + 1))
+                    continue
+                logger.warning(
+                    "llm stream transport error provider=%s: %s", self.model, type(exc).__name__
+                )
+                yield StreamError("LLM provider request failed")
+                return
 
-        for tc in tool_calls:
-            yield tc
-        _log_usage("stream", self.model, usage)
-        yield StreamDone(usage=usage)
+            for tc in tool_calls:
+                yield tc
+            _log_usage("stream", self.model, usage)
+            yield StreamDone(usage=usage)
+            return
 
     async def complete(
         self,

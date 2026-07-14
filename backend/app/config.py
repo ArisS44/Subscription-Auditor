@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # llm_base_url is an optional override; when empty the adapter uses the
     # provider's standard endpoint.
     llm_provider: str = "gemini"
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-flash-lite-latest"
     llm_api_key: str = ""
     llm_base_url: str = ""
     vapid_private_key: str = ""

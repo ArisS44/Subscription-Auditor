@@ -45,6 +45,10 @@ def _assistant_tool_calls(tool_calls: list[llm.ToolCall]) -> list[dict]:
             "id": tc.id,
             "type": "function",
             "function": {"name": tc.name, "arguments": tc.arguments},
+            # Preserved through persistence so a follow-up turn can replay the call
+            # to providers that require it (Gemini thinking models). Omitted when
+            # absent so the shape is unchanged for providers that don't use it.
+            **({"thought_signature": tc.thought_signature} if tc.thought_signature else {}),
         }
         for tc in tool_calls
     ]
@@ -105,6 +109,8 @@ async def stream_turn(
     last_render_payload = None  # get_analytics was called in this same turn.
     final_text = ""
     stream_failed = False
+    turn_input_tokens = 0  # aggregate token usage across every model call this
+    turn_output_tokens = 0  # turn, persisted once for the operator usage report.
 
     for _iteration in range(settings.chat_max_tool_iterations):
         round_text = ""
@@ -115,6 +121,10 @@ async def stream_turn(
                 yield {"type": "delta", "text": event.text}
             elif isinstance(event, llm.ToolCall):
                 round_tool_calls.append(event)
+            elif isinstance(event, llm.StreamDone):
+                if event.usage is not None:
+                    turn_input_tokens += event.usage.input_tokens
+                    turn_output_tokens += event.usage.output_tokens
             elif isinstance(event, llm.StreamError):
                 stream_failed = True
                 yield {"type": "error", "reason": event.reason, "message": event.message}
@@ -174,6 +184,14 @@ async def stream_turn(
         final_text = round_text or (
             "I couldn't complete that request within the allowed steps — please try rephrasing."
         )
+
+    # Persist aggregate token usage for the day (operator usage report). Best-effort
+    # and content-free; a failure here must never affect the turn.
+    if turn_input_tokens or turn_output_tokens:
+        try:
+            await usage.record_token_usage(user_id, turn_input_tokens, turn_output_tokens)
+        except Exception:  # noqa: BLE001 — usage accounting is best-effort
+            logger.warning("token usage accounting failed")
 
     if stream_failed:
         yield {"type": "done"}

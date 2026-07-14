@@ -23,3 +23,35 @@ async def increment_daily(conn: asyncpg.Connection, user_id: str | None, day: da
         user_id,
         day,
     )
+
+
+async def add_tokens(
+    conn: asyncpg.Connection,
+    user_id: str | None,
+    day: date,
+    input_tokens: int,
+    output_tokens: int,
+) -> None:
+    """Accumulate token usage onto the (scope, day) counter row. Called after a
+    model call reports usage, for both the per-user and app-wide (NULL) scopes, so
+    the operator can read real token totals (and derive cost) per day. Upserts the
+    same way as `increment_daily` — replica-safe, one row per (scope, day) — and
+    is additive so it composes with the request-count increment done at call start.
+    Never records message content: only aggregate token counts."""
+    if input_tokens <= 0 and output_tokens <= 0:
+        return
+    await conn.execute(
+        """
+        INSERT INTO llm_usage (user_id, day, input_tokens, output_tokens)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id, day)
+        DO UPDATE SET
+            input_tokens = llm_usage.input_tokens + EXCLUDED.input_tokens,
+            output_tokens = llm_usage.output_tokens + EXCLUDED.output_tokens,
+            updated_at = now()
+        """,
+        user_id,
+        day,
+        input_tokens,
+        output_tokens,
+    )

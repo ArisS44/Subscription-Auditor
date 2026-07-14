@@ -260,6 +260,75 @@ def test_gemini_format_messages_splits_system_and_maps_tool_result_by_name():
     }
 
 
+async def test_gemini_stream_captures_thought_signature_and_real_id():
+    # Gemini thinking models attach a `thoughtSignature` (and a real id) to each
+    # functionCall part; both must be captured so the follow-up turn can replay the
+    # call — without the signature Gemini 400s the tool-result round.
+    sse = (
+        'data: {"candidates":[{"content":{"parts":[{"functionCall":'
+        '{"name":"get_spend","args":{},"id":"abc123"},"thoughtSignature":"SIG=="}]}}]}\n\n'
+    )
+    events = await _collect(
+        _gemini().stream(
+            [Message(role="user", content="spend?")],
+            None,
+            client=_mock_client(lambda r: httpx.Response(200, text=sse)),
+        )
+    )
+    call = next(e for e in events if isinstance(e, ToolCall))
+    assert call.id == "abc123"  # provider's real id, not a synthesized one
+    assert call.thought_signature == "SIG=="
+
+
+def test_gemini_format_messages_replays_thought_signature():
+    assistant_call = {
+        "id": "abc123",
+        "type": "function",
+        "function": {"name": "get_spend", "arguments": "{}"},
+        "thought_signature": "SIG==",
+    }
+    contents = _gemini().format_messages(
+        [Message(role="assistant", content=None, tool_calls=[assistant_call])]
+    )
+    # The replayed model turn carries the signature back on the functionCall part.
+    assert contents[0]["parts"][0] == {
+        "functionCall": {"name": "get_spend", "args": {}},
+        "thoughtSignature": "SIG==",
+    }
+
+
+def test_gemini_format_messages_skips_orphaned_tool_result():
+    # When the sliding history window cuts between a functionCall and its result,
+    # the leading tool result is orphaned. It must be dropped, not emitted with a
+    # bogus function name — Gemini 400s a functionResponse that names no in-request
+    # call, which would break the whole (long-conversation) turn.
+    messages = [
+        Message(role="tool", tool_call_id="truncated_call", content='{"total": 42}'),
+        Message(role="user", content="and now?"),
+    ]
+    contents = _gemini().format_messages(messages)
+    assert contents == [{"role": "user", "parts": [{"text": "and now?"}]}]
+
+
+def test_groq_format_messages_strips_thought_signature():
+    # The Gemini-only key must never reach Groq's OpenAI-style API.
+    assistant_call = {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "get_spend", "arguments": "{}"},
+        "thought_signature": "SIG==",
+    }
+    out = _adapter().format_messages(
+        [Message(role="assistant", content=None, tool_calls=[assistant_call])]
+    )
+    assert out[0]["tool_calls"][0] == {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "get_spend", "arguments": "{}"},
+    }
+    assert "thought_signature" not in out[0]["tool_calls"][0]
+
+
 async def test_gemini_stream_normalizes_text_toolcall_and_usage():
     sse = (
         'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Hel"}]}}]}\n\n'
@@ -291,7 +360,11 @@ async def test_gemini_stream_normalizes_text_toolcall_and_usage():
 
 
 @pytest.mark.parametrize("status", [429, 503])
-async def test_gemini_stream_maps_rate_limit_status_to_reason(status: int):
+async def test_gemini_stream_maps_rate_limit_status_to_reason(status: int, monkeypatch):
+    # 503 retries a bounded number of times before degrading; drop the backoff so
+    # the test doesn't actually sleep. 429 (quota) degrades immediately.
+    monkeypatch.setattr("app.services.llm._GEMINI_STREAM_BACKOFF", 0)
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(status, json={"error": {"message": "RESOURCE_EXHAUSTED quota"}})
 
@@ -304,6 +377,27 @@ async def test_gemini_stream_maps_rate_limit_status_to_reason(status: int):
     assert err.reason == "rate_limited"
     assert str(status) not in err.message
     assert "quota" not in err.message and "RESOURCE_EXHAUSTED" not in err.message
+
+
+async def test_gemini_stream_retries_503_then_succeeds(monkeypatch):
+    # A transient 503 overload should self-heal: retry and stream normally, so the
+    # user never sees the blip.
+    monkeypatch.setattr("app.services.llm._GEMINI_STREAM_BACKOFF", 0)
+    calls = {"n": 0}
+    sse = 'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n\n'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(503, json={"error": {"message": "overloaded"}})
+        return httpx.Response(200, text=sse)
+
+    events = await _collect(
+        _gemini().stream([Message(role="user", content="hi")], None, client=_mock_client(handler))
+    )
+    assert calls["n"] == 2  # first attempt 503, retried once
+    assert "".join(e.text for e in events if isinstance(e, TextDelta)) == "hi"
+    assert isinstance(events[-1], StreamDone)
 
 
 async def test_gemini_stream_generic_error_hides_provider_details():
