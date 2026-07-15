@@ -304,7 +304,12 @@
   "chat": {
     "empty": {
       "title": "Ask Apollon anything",
-      "body": "Ask about your subscriptions, spending trends, or where you could cut back. Answers are grounded in your own data."
+      "body": "Answers are grounded in your own data.",
+      "examples": {
+        "monthly": "What am I spending per month?",
+        "cutBack": "Which subscriptions could I cut back?",
+        "byCategory": "Show my spending by category"
+      }
     },
     "thinking": "Thinking…",
     "tool": {
@@ -331,7 +336,7 @@
       "new": "New chat",
       "loading": "Loading chats…",
       "empty": "No chats yet.",
-      "untitled": "Untitled chat",
+      "untitledAt": "Chat · {{when}}",
       "delete": "Delete chat"
     },
     "deleteDialog": {

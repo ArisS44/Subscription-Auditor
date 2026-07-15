@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatShortDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/features/dashboard/ConfirmDialog';
 import type { Conversation } from './types';
@@ -9,8 +10,13 @@ import type { Conversation } from './types';
 // The conversation-history sidebar: a "new chat" action plus the list of past
 // conversations. The active one is highlighted; each row can be deleted behind a
 // confirmation dialog (deletion cascades to messages server-side and is not
-// undoable). Untitled conversations (first message not yet auto-titled) show a
-// fallback label.
+// undoable).
+//
+// A conversation is auto-titled from its first message, so a row lacking a title
+// is the rare case where titling hasn't landed yet or failed. Those fall back to
+// their creation time rather than a fixed word: several untitled rows stay
+// distinguishable from each other, and the label can't be misread as the "New
+// chat" button.
 export function ConversationSidebar({
   conversations,
   activeId,
@@ -26,8 +32,12 @@ export function ConversationSidebar({
   onDelete: (id: string) => void;
   loading: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null);
+
+  const rowLabel = (conv: Conversation) =>
+    conv.title ??
+    t('chat.sidebar.untitledAt', { when: formatShortDateTime(conv.created_at, i18n.language) });
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-card/40">
@@ -60,7 +70,7 @@ export function ConversationSidebar({
                     )}
                   >
                     <MessageSquare className="size-4 shrink-0 opacity-70" aria-hidden />
-                    <span className="truncate">{conv.title ?? t('chat.sidebar.untitled')}</span>
+                    <span className="truncate">{rowLabel(conv)}</span>
                   </button>
                   <button
                     type="button"

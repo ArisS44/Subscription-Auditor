@@ -13,3 +13,15 @@ export function formatCurrency(amount: number | string, currency: string, locale
 export function formatDate(isoDate: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(isoDate));
 }
+
+/** Compact day + time, e.g. `Jul 15, 2:32 PM` / `15 Ιουλ, 14:32`. Deliberately
+ *  omits the year: it labels recent items in tight spaces (the chat sidebar),
+ *  where the year is noise and the width is scarce. Locale decides 12h vs 24h. */
+export function formatShortDateTime(isoTimestamp: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(isoTimestamp));
+}

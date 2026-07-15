@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import i18n from '@/i18n';
 import { ChatMessages } from './ChatMessages';
@@ -22,7 +23,9 @@ function turn(overrides: Partial<PendingTurn> = {}): PendingTurn {
 }
 
 function renderPending(pending: PendingTurn) {
-  return render(<ChatMessages messages={[]} pending={pending} loading={false} />);
+  return render(
+    <ChatMessages messages={[]} pending={pending} loading={false} onExampleSelect={() => {}} />,
+  );
 }
 
 afterEach(async () => {
@@ -113,6 +116,38 @@ describe('multi-tool turns', () => {
     expect(
       screen.getByText(i18n.t('chat.structuredPlaceholder', { count: 2 })),
     ).toBeInTheDocument();
+  });
+});
+
+describe('empty state', () => {
+  function renderEmpty(onExampleSelect: (prompt: string) => void = () => {}) {
+    return render(
+      <ChatMessages
+        messages={[]}
+        pending={null}
+        loading={false}
+        onExampleSelect={onExampleSelect}
+      />,
+    );
+  }
+
+  it('offers example prompts and sends the one clicked', async () => {
+    const sent: string[] = [];
+    renderEmpty((prompt) => sent.push(prompt));
+
+    const prompts = screen.getAllByRole('button');
+    expect(prompts).toHaveLength(3);
+
+    await userEvent.click(prompts[0]);
+    expect(sent).toEqual([i18n.t('chat.empty.examples.monthly')]);
+  });
+
+  it('localizes the example prompts', async () => {
+    await i18n.changeLanguage('el');
+    renderEmpty();
+    expect(screen.getByText(i18n.t('chat.empty.examples.cutBack'))).toBeInTheDocument();
+    // Guard against the Greek locale silently falling back to the English copy.
+    expect(screen.queryByText('Which subscriptions could I cut back?')).not.toBeInTheDocument();
   });
 });
 

@@ -36,11 +36,14 @@ function TurnError({ reason }: { reason: ChatFailureReason }) {
   );
 }
 
-// One chat bubble. User turns are plain text (right-aligned, accented); assistant
-// turns render sanitized markdown (left-aligned). Structured payloads are shown
-// as a small placeholder chip for now — Task 2.2 swaps in the real typed
-// chart/table renderers; here we just prove the payload was captured.
-function Bubble({
+// One turn in the transcript. The two roles are deliberately asymmetric: a user
+// turn is a compact right-aligned bubble (short, and the bubble marks it as
+// "mine"), while an assistant turn runs open and full-width with no background.
+// The assistant carries the long-form payload — markdown prose, and the charts
+// and tables Task 2.2 renders — which a width-capped tinted box would cramp;
+// unbubbled gives that content the whole column. Structured payloads show as a
+// placeholder chip until those typed renderers land.
+function Turn({
   role,
   children,
   structuredCount = 0,
@@ -51,23 +54,28 @@ function Bubble({
 }) {
   const { t } = useTranslation();
   const isUser = role === 'user';
-  return (
-    <div className={cn('flex w-full', isUser ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'max-w-[85%] rounded-2xl px-4 py-2.5 text-sm',
-          isUser
-            ? 'rounded-br-sm bg-primary text-primary-foreground'
-            : 'rounded-bl-sm bg-muted text-foreground',
-        )}
-      >
+
+  const payloadChip = structuredCount > 0 && (
+    <div className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-1 text-xs text-muted-foreground">
+      <BarChart3 className="size-3.5" aria-hidden />
+      {t('chat.structuredPlaceholder', { count: structuredCount })}
+    </div>
+  );
+
+  if (!isUser) {
+    return (
+      <div className="w-full text-sm text-foreground">
         {children}
-        {structuredCount > 0 && (
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-1 text-xs text-muted-foreground">
-            <BarChart3 className="size-3.5" aria-hidden />
-            {t('chat.structuredPlaceholder', { count: structuredCount })}
-          </div>
-        )}
+        {payloadChip}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex w-full justify-end">
+      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
+        {children}
+        {payloadChip}
       </div>
     </div>
   );
@@ -104,14 +112,21 @@ function ToolTrail({ toolNames }: { toolNames: string[] }) {
   );
 }
 
+// Starter prompts for an empty chat. Each is a real question the tool registry
+// can actually answer — they double as documentation of what the assistant does,
+// which a blank pane cannot convey. The copy itself lives in the locale files.
+const EXAMPLE_PROMPT_KEYS = ['monthly', 'cutBack', 'byCategory'] as const;
+
 export function ChatMessages({
   messages,
   pending,
   loading,
+  onExampleSelect,
 }: {
   messages: StoredMessage[];
   pending: PendingTurn | null;
   loading: boolean;
+  onExampleSelect: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -141,9 +156,27 @@ export function ChatMessages({
   const empty = visible.length === 0 && !pending;
   if (empty) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-        <p className="text-sm font-medium text-foreground">{t('chat.empty.title')}</p>
-        <p className="max-w-sm text-sm text-muted-foreground">{t('chat.empty.body')}</p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sm font-medium text-foreground">{t('chat.empty.title')}</p>
+          <p className="max-w-sm text-sm text-muted-foreground">{t('chat.empty.body')}</p>
+        </div>
+        <ul className="flex w-full max-w-sm flex-col gap-1.5">
+          {EXAMPLE_PROMPT_KEYS.map((key) => {
+            const prompt = t(`chat.empty.examples.${key}`);
+            return (
+              <li key={key}>
+                <button
+                  type="button"
+                  onClick={() => onExampleSelect(prompt)}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-muted/60 hover:text-foreground"
+                >
+                  {prompt}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     );
   }
@@ -151,7 +184,7 @@ export function ChatMessages({
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-6">
       {visible.map((m) => (
-        <Bubble
+        <Turn
           key={m.id}
           role={m.role as 'user' | 'assistant'}
           structuredCount={m.structured_payload ? 1 : 0}
@@ -161,15 +194,15 @@ export function ChatMessages({
           ) : (
             <p className="whitespace-pre-wrap">{m.content}</p>
           )}
-        </Bubble>
+        </Turn>
       ))}
 
       {pending && (
         <>
-          <Bubble role="user">
+          <Turn role="user">
             <p className="whitespace-pre-wrap">{pending.userContent}</p>
-          </Bubble>
-          <Bubble role="assistant" structuredCount={pending.structured.length}>
+          </Turn>
+          <Turn role="assistant" structuredCount={pending.structured.length}>
             {pending.errorReason ? (
               <TurnError reason={pending.errorReason} />
             ) : pending.assistantContent ? (
@@ -186,7 +219,7 @@ export function ChatMessages({
                 <StreamingCaret />
               </p>
             )}
-          </Bubble>
+          </Turn>
         </>
       )}
 

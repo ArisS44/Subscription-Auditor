@@ -222,7 +222,13 @@ export function ChatView() {
         loading={conversationsQuery.isLoading}
       />
       <div className="flex min-w-0 flex-1 flex-col bg-background">
-        <ChatMessages messages={messages} pending={pending} loading={historyLoading} />
+        <ChatMessages
+          messages={messages}
+          pending={pending}
+          loading={historyLoading}
+          // An example prompt from the empty state sends exactly as if typed.
+          onExampleSelect={handleSend}
+        />
         <ChatComposer onSend={handleSend} disabled={pending?.streaming ?? false} />
       </div>
     </div>
