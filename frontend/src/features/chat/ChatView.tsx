@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/auth-context';
 import {
@@ -12,8 +11,13 @@ import {
 import { ConversationSidebar } from './ConversationSidebar';
 import { ChatMessages } from './ChatMessages';
 import { ChatComposer } from './ChatComposer';
-import { streamMessage } from './chat-stream';
-import type { ChatStreamEvent, PendingTurn } from './types';
+import { ChatStreamError, streamMessage } from './chat-stream';
+import {
+  isChatErrorReason,
+  type ChatFailureReason,
+  type ChatStreamEvent,
+  type PendingTurn,
+} from './types';
 
 // The Chat tab. Orchestrates three pieces of state:
 //  - `activeId`: the selected conversation, or null for a fresh chat that has
@@ -25,7 +29,6 @@ import type { ChatStreamEvent, PendingTurn } from './types';
 //    a query — the stream is not a cache concern; it only invalidates the queries
 //    when a turn completes.
 export function ChatView() {
-  const { t } = useTranslation();
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const queryClient = useQueryClient();
@@ -80,13 +83,21 @@ export function ChatView() {
         case 'delta':
           return { ...prev, assistantContent: prev.assistantContent + event.text };
         case 'tool':
-          return { ...prev, toolName: event.name };
+          // Append rather than replace: one turn may invoke several tools.
+          return { ...prev, toolNames: [...prev.toolNames, event.name] };
         case 'structured':
           return { ...prev, structured: [...prev.structured, event.payload] };
         case 'error':
-          // Graceful in-stream error (includes rate/cost-cap breaches): show its
-          // message as the assistant's turn, not as a network failure.
-          return { ...prev, errorMessage: event.message, streaming: false };
+          // Graceful in-stream error (cap breaches and provider faults alike):
+          // shown as the assistant's turn, not as a crash. We keep the backend's
+          // `reason` tag and ignore its `message` — that text is English-only and
+          // occasionally phrased in internal terms, so the UI supplies its own
+          // localized copy. An unrecognized tag degrades to the generic case.
+          return {
+            ...prev,
+            errorReason: isChatErrorReason(event.reason) ? event.reason : 'llm_error',
+            streaming: false,
+          };
         case 'done':
           return { ...prev, streaming: false };
         // `title` is handled outside pending state (it updates the sidebar).
@@ -112,8 +123,8 @@ export function ChatView() {
           userContent: text,
           assistantContent: '',
           structured: [],
-          toolName: null,
-          errorMessage: t('chat.error.network'),
+          toolNames: [],
+          errorReason: 'network',
           streaming: false,
         });
         return;
@@ -124,8 +135,8 @@ export function ChatView() {
       userContent: text,
       assistantContent: '',
       structured: [],
-      toolName: null,
-      errorMessage: null,
+      toolNames: [],
+      errorReason: null,
       streaming: true,
     });
 
@@ -167,9 +178,13 @@ export function ChatView() {
       );
     } catch (err) {
       if ((err as Error).name === 'AbortError') return; // user navigated away
-      setPending((prev) =>
-        prev ? { ...prev, streaming: false, errorMessage: t('chat.error.network') } : prev,
-      );
+      // The request failed before the stream opened, so there is no `error`
+      // frame to read a reason from — derive one from the HTTP status. A 404 is
+      // the conversation being gone (deleted in another tab); anything else is
+      // treated as a transport fault.
+      const reason: ChatFailureReason =
+        err instanceof ChatStreamError && err.status === 404 ? 'not_found' : 'network';
+      setPending((prev) => (prev ? { ...prev, streaming: false, errorReason: reason } : prev));
       return;
     } finally {
       abortRef.current = null;

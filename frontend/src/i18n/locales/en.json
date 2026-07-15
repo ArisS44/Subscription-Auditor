@@ -307,7 +307,19 @@
       "body": "Ask about your subscriptions, spending trends, or where you could cut back. Answers are grounded in your own data."
     },
     "thinking": "Thinking…",
-    "usingTool": "Looking up {{tool}}…",
+    "tool": {
+      "fallback": "Working…",
+      "query_subscriptions": "Checking your subscriptions…",
+      "get_analytics": "Crunching your spending…",
+      "add_subscription": "Adding the subscription…",
+      "update_subscription": "Updating the subscription…",
+      "mark_subscription_cancelled": "Marking it cancelled…",
+      "delete_subscription": "Deleting the subscription…",
+      "get_user_settings": "Checking your settings…",
+      "update_user_settings": "Updating your settings…",
+      "render_chart": "Building a chart…",
+      "render_table": "Building a table…"
+    },
     "loadingHistory": "Loading conversation…",
     "structuredPlaceholder": "{{count}} chart or table (coming soon)",
     "composer": {
@@ -329,7 +341,13 @@
       "cancel": "Cancel"
     },
     "error": {
-      "network": "Something went wrong reaching the assistant. Please try again."
+      "network": "Something went wrong reaching the assistant. Please try again.",
+      "rate": "You're sending messages a bit fast. Wait a moment, then try again.",
+      "user_daily": "You've reached today's message limit. It resets tomorrow.",
+      "global_daily": "The assistant is busy right now. Please try again shortly.",
+      "rate_limited": "The assistant is at capacity right now. Please try again in a moment.",
+      "llm_error": "The assistant couldn't finish that reply. Please try again.",
+      "not_found": "This chat is no longer available. It may have been deleted."
     }
   },
   "auth": {
