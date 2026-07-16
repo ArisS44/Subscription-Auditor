@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/auth-context';
 import {
   conversationKeys,
+  fetchMessages,
   useConversations,
   useCreateConversation,
   useDeleteConversation,
@@ -190,20 +191,41 @@ export function ChatView() {
       abortRef.current = null;
     }
 
-    // Clean completion: the reply is persisted server-side. Refetch the history
-    // (and the list, for updated_at ordering + a brand-new conversation's title)
-    // BEFORE clearing the optimistic pending turn, so there's no flicker or
-    // duplicate. On an in-stream error we keep `pending` visible (its message is
-    // the assistant's turn) and only refresh the list.
+    // Clean completion: the reply is now persisted server-side, so the streamed
+    // copy in `pending` has to give way to the real history. Both must land in a
+    // SINGLE render — the turn exists in `pending` and in the refetched history
+    // at once, so any render observing both draws it twice.
+    //
+    // Hence the fetch-then-commit shape rather than `invalidateQueries`:
+    // invalidation writes the history into the cache itself, which renders the
+    // duplicate before we ever get control back to clear `pending`. Fetching
+    // outside the cache keeps that write in our hands, so the swap below is one
+    // batched update and the turn never doubles.
+    //
+    // On an in-stream error we keep `pending` visible (its message is the
+    // assistant's turn) and only refresh the list.
     if (sawError) {
       void queryClient.invalidateQueries({ queryKey: conversationKeys.list(accessToken) });
       return;
     }
-    await queryClient.invalidateQueries({
-      queryKey: conversationKeys.messages(conversationId, accessToken),
-    });
-    await queryClient.invalidateQueries({ queryKey: conversationKeys.list(accessToken) });
-    setPending(null);
+
+    try {
+      const history = await fetchMessages(conversationId, accessToken);
+      queryClient.setQueryData(conversationKeys.messages(conversationId, accessToken), history);
+      setPending(null);
+    } catch {
+      // The reply is safely persisted; only our re-read of it failed. Fall back
+      // to an invalidation and let the query layer retry, keeping `pending` on
+      // screen meanwhile so the turn is never lost from view.
+      void queryClient.invalidateQueries({
+        queryKey: conversationKeys.messages(conversationId, accessToken),
+      });
+      setPending(null);
+    }
+
+    // The sidebar only needs updated_at ordering and a new conversation's title,
+    // so it refreshes in the background — the transcript must not wait on it.
+    void queryClient.invalidateQueries({ queryKey: conversationKeys.list(accessToken) });
   }
 
   const messages = messagesQuery.data?.items ?? [];

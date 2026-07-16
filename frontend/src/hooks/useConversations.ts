@@ -59,17 +59,28 @@ export function useConversations(accessToken: string | undefined) {
   });
 }
 
+/** Fetch a conversation's messages directly, bypassing the query cache.
+ *  Used to close a streamed turn: the caller needs the fresh history in hand so
+ *  it can install it and drop its optimistic copy of the turn in one update. An
+ *  `invalidateQueries` refetch cannot do that — it writes to the cache itself,
+ *  forcing a render where both copies exist. */
+export function fetchMessages(
+  conversationId: string,
+  accessToken: string | undefined,
+): Promise<MessageListResponse> {
+  return requestJson<MessageListResponse>(
+    `/conversations/${conversationId}/messages?limit=200`,
+    accessToken,
+  );
+}
+
 /** A conversation's persisted messages, loaded when it becomes the active
  *  conversation. `enabled` is false while no conversation is selected (a fresh,
  *  not-yet-created chat), so no request fires for a null id. */
 export function useMessages(conversationId: string | undefined, accessToken: string | undefined) {
   return useQuery({
     queryKey: conversationKeys.messages(conversationId, accessToken),
-    queryFn: () =>
-      requestJson<MessageListResponse>(
-        `/conversations/${conversationId}/messages?limit=200`,
-        accessToken,
-      ),
+    queryFn: () => fetchMessages(conversationId as string, accessToken),
     enabled: Boolean(accessToken) && Boolean(conversationId),
   });
 }
