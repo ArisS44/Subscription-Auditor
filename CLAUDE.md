@@ -111,6 +111,7 @@ Apply the **Secure** and **Private & compliant** non-negotiables above. Always-o
 - **Every user-facing string is i18n-keyed in both `en` and `el`** (`src/i18n/locales/`) — no hardcoded copy. Numbers, dates, and currencies are formatted with the `Intl` API keyed to the active language (never hand-rolled formatting).
 - **New shadcn/ui components use the Base UI preset** (`render`-prop API), not Radix — match the project's established shadcn setup.
 - Dark mode is the default and primary design target; forms use `react-hook-form` + `zod` (Zod is UX-only validation — the backend re-validates).
+- **`npm run test` (Vitest) does not catch every error `npm run build` (`tsc -b`) does** — Vitest doesn't fully type-check test files the way the build's type-check step does (e.g. an untyped `vi.fn()` mock can pass tests but fail the build). Run `npm run build` locally before merging any test-file change, not just the test suite — this has caused a prod-only CI failure once already (Session 3, Task 3.2).
 
 ## UX collaboration (any Task making visual/aesthetic choices)
 
