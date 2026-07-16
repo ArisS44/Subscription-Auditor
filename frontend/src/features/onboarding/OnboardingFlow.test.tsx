@@ -9,7 +9,7 @@ import { AuthContext } from '@/features/auth/auth-context';
 import { OnboardingFlow } from './OnboardingFlow';
 
 function mockFetch() {
-  const fetchMock = vi.fn(() =>
+  const fetchMock = vi.fn<typeof fetch>(() =>
     Promise.resolve(
       new Response(JSON.stringify({ onboarding_completed: true }), {
         status: 200,

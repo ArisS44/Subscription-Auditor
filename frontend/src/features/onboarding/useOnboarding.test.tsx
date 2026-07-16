@@ -67,7 +67,7 @@ describe('useOnboarding navigation', () => {
   });
 
   it('complete() PATCHes onboarding_completed and clears local progress', async () => {
-    const fetchMock = vi.fn(() =>
+    const fetchMock = vi.fn<typeof fetch>(() =>
       Promise.resolve(
         new Response(JSON.stringify({ onboarding_completed: true }), {
           status: 200,
