@@ -46,4 +46,24 @@ describe('Markdown sanitization', () => {
     expect(out).toContain('rel="noopener noreferrer nofollow"');
     expect(out).toContain('target="_blank"');
   });
+
+  // The model writes placeholder tokens like `{chart}` into its prose; the real
+  // chart renders as a separate component, so the tokens are stripped from text.
+  it('strips {chart} / {table} placeholder tokens the model emits', () => {
+    const out = html('Here is your spending.\n\n{chart}\n\nAnd a breakdown.\n\n{table}');
+    expect(out).not.toContain('{chart}');
+    expect(out).not.toContain('{table}');
+    expect(out).toContain('Here is your spending.');
+    expect(out).toContain('And a breakdown.');
+  });
+
+  it('handles placeholder variants (plural, double-brace, spaced)', () => {
+    const out = html('{{ charts }} {graph} {Tables}');
+    expect(out).not.toMatch(/\{+\s*(chart|table|graph)/i);
+  });
+
+  it('keeps ordinary braces that are not visual placeholders', () => {
+    const out = html('Use the {variable} in your config.');
+    expect(out).toContain('{variable}');
+  });
 });

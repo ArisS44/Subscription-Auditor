@@ -51,8 +51,23 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 // so a single newline becomes <br> as users expect in chat.
 marked.setOptions({ async: false, gfm: true, breaks: true });
 
+// The model sometimes writes placeholder tokens like `{chart}` or `{table}` into
+// its prose, expecting them to be swapped for the visual. We render the grounded
+// chart/table as a separate typed component below the text instead, so these
+// tokens are just leftover noise — strip them (and any blank line they leave).
+function stripVisualPlaceholders(markdown: string): string {
+  return (
+    markdown
+      .replace(/\{\{?\s*(charts?|tables?|graphs?)\s*\}?\}/gi, '')
+      // Collapse the blank-line runs a removed token leaves behind, keeping normal
+      // paragraph breaks (at most one blank line) intact.
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
+}
+
 function renderSafeHtml(markdown: string): string {
-  const rawHtml = marked.parse(markdown) as string;
+  const rawHtml = marked.parse(stripVisualPlaceholders(markdown)) as string;
   return DOMPurify.sanitize(rawHtml, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,

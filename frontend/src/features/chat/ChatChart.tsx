@@ -131,6 +131,7 @@ export function ChatChart({ payload, height = 240 }: { payload: ChartPayload; he
           paddingAngle={data.length > 1 ? 2 : 0}
           stroke="var(--card)"
           strokeWidth={2}
+          isAnimationActive={false}
         >
           {data.map((d) => (
             <Cell key={d.label} fill={d.color} />
@@ -159,6 +160,7 @@ export function ChatChart({ payload, height = 240 }: { payload: ChartPayload; he
           strokeWidth={2}
           dot={{ r: 3, fill: 'var(--chart-1)' }}
           activeDot={{ r: 5 }}
+          isAnimationActive={false}
         />
       </LineChart>
     );
@@ -175,7 +177,7 @@ export function ChatChart({ payload, height = 240 }: { payload: ChartPayload; he
           width={56}
         />
         {tooltip}
-        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+        <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
           {data.map((d) => (
             <Cell key={d.label} fill={d.color} />
           ))}
@@ -203,7 +205,7 @@ export function ChatChart({ payload, height = 240 }: { payload: ChartPayload; he
           width={104}
         />
         {tooltip}
-        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+        <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
           {data.map((d) => (
             <Cell key={d.label} fill={d.color} />
           ))}

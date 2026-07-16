@@ -38,12 +38,12 @@ function TurnError({ reason }: { reason: ChatFailureReason }) {
 }
 
 // One turn in the transcript. The two roles are deliberately asymmetric: a user
-// turn is a compact right-aligned bubble (short, and the bubble marks it as
-// "mine"), while an assistant turn runs open and full-width with no background.
-// The assistant carries the long-form payload — markdown prose plus any grounded
-// charts and tables — which a width-capped tinted box would cramp; unbubbled
-// gives that content the whole column. Each `structured` payload is rendered by
-// its typed component (chart/table), in arrival order below the text.
+// turn is a compact right-aligned bubble on the accent colour (short, and the
+// bubble marks it as "mine"), while an assistant turn is a full-width bubble on a
+// faint translucent surface. The assistant carries the long-form payload —
+// markdown prose plus any grounded charts and tables — so it keeps the whole
+// column width (never the 85% cap) and only a soft background to set it apart
+// from the page. Each `structured` payload renders as its typed component below.
 function Turn({
   role,
   children,
@@ -61,7 +61,7 @@ function Turn({
 
   if (!isUser) {
     return (
-      <div className="w-full text-sm text-foreground">
+      <div className="w-full rounded-2xl rounded-bl-sm bg-muted/40 px-4 py-3 text-sm text-foreground">
         {children}
         {payloads}
       </div>
@@ -179,7 +179,7 @@ export function ChatMessages({
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-6">
+    <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-6">
       {visible.map((m) => (
         <Turn
           key={m.id}
