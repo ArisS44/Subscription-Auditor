@@ -8,7 +8,7 @@
     "exit": "Έξοδος από τη ρύθμιση",
     "progress": "Βήμα {{current}} από {{total}}",
     "continue": "Συνέχεια",
-    "skip": "Παράλειψη",
+    "skipStep": "Παράλειψη",
     "back": "Πίσω",
     "welcome": {
       "title": "Καλώς ήρθατε στο Auditor",

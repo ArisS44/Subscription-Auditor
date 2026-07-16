@@ -8,7 +8,7 @@
     "exit": "Exit setup",
     "progress": "Step {{current}} of {{total}}",
     "continue": "Continue",
-    "skip": "Skip",
+    "skipStep": "Skip",
     "back": "Back",
     "welcome": {
       "title": "Welcome to Auditor",

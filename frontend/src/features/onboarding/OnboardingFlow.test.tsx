@@ -107,4 +107,23 @@ describe('OnboardingFlow', () => {
     const rail = screen.getByRole('group', { name: /step 1 of 6/i });
     expect(rail).toBeInTheDocument();
   });
+
+  it('has a working Skip control that reads as a string and advances', async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    renderFlow();
+
+    // Reach a step with the footer's Skip control (the manual setup step).
+    await user.click(screen.getByRole('button', { name: i18n.t('onboarding.welcome.start') }));
+    await user.click(screen.getByText(i18n.t('onboarding.method.manual.title')));
+
+    const skip = screen.getByRole('button', { name: i18n.t('onboarding.skipStep') });
+    // Guards the leaf-vs-namespace i18n collision: the label must be a resolved
+    // string, never i18next's "returned an object instead of string" fallback.
+    expect(skip.textContent).toBe('Skip');
+    expect(skip.textContent).not.toMatch(/returned an object/i);
+
+    await user.click(skip);
+    expect(screen.getByText(i18n.t('onboarding.extension.title'))).toBeInTheDocument();
+  });
 });

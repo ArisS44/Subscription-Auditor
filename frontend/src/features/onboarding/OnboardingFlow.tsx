@@ -343,7 +343,7 @@ function StepFooter({
       </Button>
       <div className="flex items-center gap-2">
         <Button variant="ghost" onClick={onNext}>
-          {t('onboarding.skip')}
+          {t('onboarding.skipStep')}
         </Button>
         <Button onClick={onNext}>{t(nextKey)}</Button>
       </div>
