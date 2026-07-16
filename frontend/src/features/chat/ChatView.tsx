@@ -29,7 +29,7 @@ import {
 //    reply assembled from the SSE stream). This is intentionally LOCAL state, not
 //    a query — the stream is not a cache concern; it only invalidates the queries
 //    when a turn completes.
-export function ChatView() {
+export function ChatView({ onboarding = false }: { onboarding?: boolean } = {}) {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const queryClient = useQueryClient();
@@ -176,6 +176,7 @@ export function ChatView() {
           },
         },
         controller.signal,
+        onboarding,
       );
     } catch (err) {
       if ((err as Error).name === 'AbortError') return; // user navigated away

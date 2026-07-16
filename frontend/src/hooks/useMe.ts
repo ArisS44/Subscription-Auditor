@@ -6,12 +6,14 @@ export interface Profile {
   email: string;
   display_name: string | null;
   preferred_language: string;
+  onboarding_completed: boolean;
 }
 
-// Partial profile update — mirrors the backend ProfileUpdate (both optional).
+// Partial profile update — mirrors the backend ProfileUpdate (all optional).
 export interface ProfileUpdateInput {
   display_name?: string | null;
   preferred_language?: 'auto' | 'en' | 'el';
+  onboarding_completed?: boolean;
 }
 
 export function useMe(accessToken: string | undefined) {

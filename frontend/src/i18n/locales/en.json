@@ -4,6 +4,61 @@
     "subtitle": "Track, analyze, and optimize your recurring subscriptions.",
     "cta": "Get started"
   },
+  "onboarding": {
+    "exit": "Exit setup",
+    "progress": "Step {{current}} of {{total}}",
+    "continue": "Continue",
+    "skip": "Skip",
+    "back": "Back",
+    "welcome": {
+      "title": "Welcome to Auditor",
+      "body": "Let's get your subscriptions set up so you can see where your money goes. This only takes a minute, and you can skip any step.",
+      "start": "Get started"
+    },
+    "method": {
+      "title": "How would you like to start?",
+      "body": "Add your first subscriptions in whichever way suits you.",
+      "chat": {
+        "title": "Chat with Apollon",
+        "body": "Tell the assistant what you're subscribed to and it adds them for you."
+      },
+      "manual": {
+        "title": "Add one manually",
+        "body": "Fill in a short form for a subscription yourself."
+      },
+      "skip": {
+        "title": "Skip for now",
+        "body": "Set things up later — you can always add subscriptions from the dashboard."
+      }
+    },
+    "manual": {
+      "title": "Add a subscription",
+      "body": "Add your first subscription now, or continue and do it later.",
+      "add": "Add subscription"
+    },
+    "skip": {
+      "title": "No problem",
+      "body": "You can add subscriptions anytime from the dashboard or by chatting with Apollon."
+    },
+    "extension": {
+      "title": "Browser extension",
+      "body": "A browser extension to track time spent in your subscribed tools is on the way. Nothing to do here yet."
+    },
+    "notifications": {
+      "title": "Renewal reminders",
+      "body": "Push reminders before a subscription renews are coming soon. You'll be able to opt in when they land."
+    },
+    "done": {
+      "title": "You're all set",
+      "body": "That's everything for now. You can revisit any of this from your dashboard.",
+      "finish": "Go to dashboard"
+    },
+    "banner": {
+      "text": "Finish setting up your account.",
+      "continue": "Continue setup",
+      "dismiss": "Dismiss for now"
+    }
+  },
   "dashboard": {
     "title": "Dashboard",
     "brand": "Auditor",

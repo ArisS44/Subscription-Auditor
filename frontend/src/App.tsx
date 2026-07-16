@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/features/auth/AuthProvider';
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute';
 import { DashboardShell } from '@/features/dashboard/DashboardShell';
+import { OnboardingFlow } from '@/features/onboarding/OnboardingFlow';
 import { OverviewPage } from '@/features/dashboard/pages/OverviewPage';
 import { SubscriptionsPage } from '@/features/dashboard/pages/SubscriptionsPage';
 import { SubscriptionDetailPage } from '@/features/dashboard/pages/SubscriptionDetailPage';
@@ -29,6 +30,17 @@ function App() {
             <Route path="/signup" element={<Signup />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            {/* Full-screen onboarding wizard, outside the dashboard shell (no
+                nav sidebar) but still auth-guarded. New users are routed here on
+                first login; it returns to /dashboard on finish or exit. */}
+            <Route
+              path="/onboarding"
+              element={
+                <ProtectedRoute>
+                  <OnboardingFlow />
+                </ProtectedRoute>
+              }
+            />
             {/* Layout route: the shell (sidebar + <Outlet/>) stays mounted while
                 the nested child routes below swap into its content area. Still
                 guarded by ProtectedRoute, so the whole dashboard requires auth. */}

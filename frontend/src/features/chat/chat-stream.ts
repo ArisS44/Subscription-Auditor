@@ -34,6 +34,9 @@ export async function streamMessage(
   accessToken: string | undefined,
   { onEvent }: StreamHandlers,
   signal?: AbortSignal,
+  // Onboarding mode selects the backend's guiding system-prompt variant. It
+  // changes only the assistant's framing — same endpoint, tools, and events.
+  onboarding = false,
 ): Promise<void> {
   const response = await apiFetch(`/conversations/${conversationId}/messages`, {
     accessToken,
@@ -41,7 +44,7 @@ export async function streamMessage(
     // Body must be JSON per ChatMessageRequest; Accept nudges any proxy toward
     // the event-stream content type.
     headers: { Accept: 'text/event-stream' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, onboarding }),
     signal,
   });
 
