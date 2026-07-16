@@ -8,6 +8,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { formatNumber } from '@/lib/format';
+import { humanizeLabel } from './labels';
 import type { TablePayload } from './structured';
 
 // Renders a grounded table payload from the assistant on the shared shadcn table
@@ -22,7 +23,9 @@ export function ChatTable({ payload }: { payload: TablePayload }) {
   const { title, columns, rows } = payload;
 
   function renderCell(cell: string | number): string {
-    return typeof cell === 'number' ? formatNumber(cell, i18n.language) : cell;
+    // Numbers → locale-formatted; strings → humanized, so a category key like
+    // `ai_tool` in a cell reads as "AI tool" instead of leaking the enum.
+    return typeof cell === 'number' ? formatNumber(cell, i18n.language) : humanizeLabel(cell, t);
   }
 
   const isNumeric = (cell: string | number) => typeof cell === 'number';

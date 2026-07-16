@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { formatCurrency, formatNumber } from '@/lib/format';
+import { humanizeLabel } from './labels';
 import type { ChartPayload } from './structured';
 
 // Renders a grounded chart payload from the assistant. The chart TYPE is chosen
@@ -96,12 +97,14 @@ function ChartTooltip({
 }
 
 export function ChatChart({ payload, height = 240 }: { payload: ChartPayload; height?: number }) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const locale = i18n.language;
   const { chart_type, currency, title } = payload;
 
+  // Humanize labels once, here — axis, tooltip, and legend all read `label`, so a
+  // raw category key like `ai_tool` is turned into its localized name in one place.
   const data: ChartRow[] = payload.points.map((p, i) => ({
-    label: p.label,
+    label: humanizeLabel(p.label, t),
     value: p.value,
     color: colorAt(i),
   }));
