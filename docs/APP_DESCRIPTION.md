@@ -327,7 +327,7 @@ User message
 [System prompt + conversation history + user message]
     │
     ▼
-LLM (Llama 3.3 70B via Groq) — function calling enabled
+LLM (Gemini Flash-Lite, Groq/Llama 3.3 70B as fallback) — function calling enabled
     │
     ├─→ Decides to call 0, 1, or N tools
     │
@@ -422,13 +422,13 @@ Stream to frontend via SSE
 | Azure Application Insights | Free tier (5 GB/mo) |
 | Azure Key Vault | Standard |
 | Supabase | Free tier |
-| Groq | Free tier |
+| Google Gemini | Paid Cloud Prepay (~€10, auto-reload off) |
 | GitHub | Free (public or private repo) |
 
 ### 4.5 LLM Configuration
-- **Provider**: Groq.
-- **Model**: `llama-3.3-70b-versatile` (primary). `llama-3.1-8b-instant` may be used as a fallback for cost-sensitive simple calls (e.g., language detection on its own — though the main model handles this fine).
-- **Function calling**: Native (OpenAI-compatible).
+- **Provider**: Google Gemini (migrated from Groq in Session 3 — see `docs/DECISIONS.md` 2026-07-13; Groq's free tier proved too rate-limited for real multi-user testing). Groq remains a selectable fallback adapter behind the same provider-agnostic `llm.py` wrapper.
+- **Model**: `gemini-flash-lite-latest` (primary — a moving alias; consider pinning to a dated model for reproducibility). `llama-3.3-70b-versatile` via Groq remains available as a documented fallback.
+- **Function calling**: Native, translated behind one internal tool-definition format per provider.
 - **Streaming**: Enabled for chat endpoints.
 
 ### 4.6 Cost Profile
@@ -443,8 +443,8 @@ Expected monthly burn at low traffic:
 | Application Insights | $0 |
 | Key Vault | ~$0.03 |
 | Supabase | $0 |
-| Groq | $0 |
-| **Total** | **~$7–10 / month** |
+| Google Gemini | ~€10 one-time prepay (hard cap, not recurring) |
+| **Total** | **~$7–10 / month + a one-time ~€10 LLM prepay** |
 
 The $100 Azure Student credits should last ~10–14 months at this rate.
 
@@ -883,7 +883,7 @@ For the extension: `npm run dev` inside `extension/`, then load `extension/dist`
 | Secrets | **Azure Key Vault**, referenced by Container App |
 | Logs/metrics | **Azure Application Insights** |
 | DB / Auth / Storage | **Supabase** |
-| LLM | **Groq** |
+| LLM | **Google Gemini** (Groq fallback) |
 | Push delivery | Browser push services via VAPID |
 
 ### 9.2 CI/CD (GitHub Actions)
@@ -948,7 +948,7 @@ Important deployment detail: **Server-Sent Events must not be buffered** by the 
 - A legal disclaimer is shown on first onboarding and in Settings, clarifying that AI-generated advice is not professional financial advice.
 
 ### 10.6 Rate Limiting
-- A simple per-user-per-endpoint rate limiter on the chat endpoint to prevent runaway Groq usage (e.g., 30 messages/minute).
+- A simple per-user-per-endpoint rate limiter on the chat endpoint to prevent runaway LLM usage (e.g., 30 messages/minute).
 - Extension event ingestion is rate-limited by the backend (e.g., 1 batch/min/token).
 
 ---

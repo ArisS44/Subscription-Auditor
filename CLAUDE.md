@@ -5,8 +5,9 @@ Persistent project context. Read at the start of every session.
 ## What this is
 
 A full-stack, AI-native web app to track/analyze/optimize recurring subscriptions. Bilingual (EN/GR)
-chatbot as the primary interface, dark-mode dashboard, Chrome extension for AI-tool time tracking,
-Web Push reminders, invoice import, monthly AI insights. Solo portfolio + personal-use + learning project.
+chatbot as the primary interface, dark-mode dashboard, Chrome extension for subscription usage/time
+tracking (as broad as browser visibility allows, not just AI tools — see `docs/DECISIONS.md`), Web Push
+reminders, invoice import, monthly AI insights. Solo portfolio + personal-use + learning project.
 
 - **Full spec:** `docs/APP_DESCRIPTION.md`
 - **Session plan (build order):** `docs/APM_SESSIONS.md`
@@ -22,9 +23,9 @@ features only at session boundaries — never ship a session's security half-don
 ## Stack
 
 React+Vite+TS · Tailwind · shadcn/ui · Recharts — FastAPI · Pydantic v2 · asyncpg — Supabase
-(Postgres+Auth+Storage, RLS everywhere) · Groq (Llama 3.3 70B, tool-calling, SSE) · Azure Container
-Apps + Static Web Apps + Key Vault + App Insights. Single-agent tool-calling — **no LangChain, no
-multi-agent**.
+(Postgres+Auth+Storage, RLS everywhere) · Gemini Flash (tool-calling, SSE; Groq/Llama 3.3 70B kept as a
+documented fallback adapter — see `docs/DECISIONS.md` 2026-07-13) · Azure Container Apps + Static Web
+Apps + Key Vault + App Insights. Single-agent tool-calling — **no LangChain, no multi-agent**.
 
 ## Non-negotiables (full detail in `docs/ENGINEERING_STANDARDS.md`)
 
