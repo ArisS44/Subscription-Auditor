@@ -263,6 +263,49 @@ This is why the role assignment in the previous section had to happen before thi
 Apps validates that the identity can actually read the referenced secret at the time you wire the
 reference.
 
+### LLM + chat-cap secrets (added when the chat feature landed)
+
+The chat feature added four environment-driven settings in `backend/app/config.py`. Only two are
+strictly load-bearing — `llm-api-key` (chat auth fails without it) and `chat-global-daily-cap` (the
+app-wide daily LLM budget; the code default is 5000, but production runs at **2000** by explicit
+decision). `llm-provider`/`llm-model` match the code defaults today and are set only to pin
+production's provider/model in config rather than riding on a default. They go through the same
+Key Vault → secret-reference → env-var mechanism as everything above.
+
+| Key Vault secret | Container App alias | Env var | Value |
+|---|---|---|---|
+| `llm-provider` | `llm-provider` | `LLM_PROVIDER` | `gemini` |
+| `llm-model` | `llm-model` | `LLM_MODEL` | `gemini-flash-lite-latest` |
+| `llm-api-key` | `llm-api-key` | `LLM_API_KEY` | the Gemini key (paid Cloud Prepay tier) |
+| `chat-global-daily-cap` | `chat-global-cap` | `CHAT_GLOBAL_DAILY_CAP` | `2000` |
+
+Note the alias shortening: `chat-global-daily-cap` is 21 chars, over the Container App secret-key
+20-char cap, so its Container App alias is `chat-global-cap` (same reason `supabase-service-role-key`
+became `sb-service-role-key` above). The Key Vault secret keeps the full descriptive name.
+
+```bash
+az keyvault secret set --vault-name "$KV_NAME" --name llm-provider          --value "gemini"
+az keyvault secret set --vault-name "$KV_NAME" --name llm-model             --value "gemini-flash-lite-latest"
+az keyvault secret set --vault-name "$KV_NAME" --name llm-api-key           --value "$GEMINI_API_KEY"
+az keyvault secret set --vault-name "$KV_NAME" --name chat-global-daily-cap --value "2000"
+
+az containerapp secret set \
+  --resource-group "$RG" --name "$APP_NAME" \
+  --secrets \
+    llm-provider="keyvaultref:https://$KV_NAME.vault.azure.net/secrets/llm-provider,identityref:system" \
+    llm-model="keyvaultref:https://$KV_NAME.vault.azure.net/secrets/llm-model,identityref:system" \
+    llm-api-key="keyvaultref:https://$KV_NAME.vault.azure.net/secrets/llm-api-key,identityref:system" \
+    chat-global-cap="keyvaultref:https://$KV_NAME.vault.azure.net/secrets/chat-global-daily-cap,identityref:system"
+
+az containerapp update \
+  --resource-group "$RG" --name "$APP_NAME" \
+  --set-env-vars \
+    LLM_PROVIDER=secretref:llm-provider \
+    LLM_MODEL=secretref:llm-model \
+    LLM_API_KEY=secretref:llm-api-key \
+    CHAT_GLOBAL_DAILY_CAP=secretref:chat-global-cap
+```
+
 ---
 
 ## 5. Static Web Apps (frontend)
@@ -316,6 +359,22 @@ project's (`subscription-auditor-prod`) Authentication → URL Configuration →
 in the Supabase dashboard — the same kind of step done for local dev in Session 3.2, now for the real
 production URL. Do this now or immediately before first production deploy; Google sign-in will fail
 in prod until it's done.
+
+### Turnstile CAPTCHA (production keys)
+
+Dev uses Cloudflare's public always-passing test key; production needs a **real** Turnstile widget so
+the login CAPTCHA actually protects the auth form. The site key and secret key live in two different
+places:
+
+- **Site key** (public) → GitHub Actions secret `PROD_VITE_TURNSTILE_SITE_KEY`, consumed by
+  `frontend.yml` as `VITE_TURNSTILE_SITE_KEY` and baked into the bundle at build time. `Turnstile.tsx`
+  falls back to the test key when this is empty, so leaving it unset ships prod with CAPTCHA disabled.
+- **Secret key** (private) → the **prod** Supabase project's Authentication → Attack Protection →
+  CAPTCHA setting (console step, not CLI), where Supabase's server verifies submitted tokens with
+  Cloudflare.
+
+Register the Static Web App default hostname (`<SWA_URL>`, no scheme) on the Cloudflare Turnstile
+widget's allowed hostnames. Cloudflare's keys are formatted `0x...` — paste them verbatim.
 
 ---
 

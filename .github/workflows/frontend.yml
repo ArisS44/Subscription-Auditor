@@ -22,6 +22,7 @@ jobs:
       VITE_SUPABASE_ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
       VITE_API_BASE_URL: ${{ secrets.PROD_VITE_API_BASE_URL }}
       VITE_VAPID_PUBLIC_KEY: ${{ secrets.PROD_VITE_VAPID_PUBLIC_KEY }}
+      VITE_TURNSTILE_SITE_KEY: ${{ secrets.PROD_VITE_TURNSTILE_SITE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
