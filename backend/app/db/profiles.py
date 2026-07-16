@@ -10,13 +10,14 @@ async def get_profile_by_id(conn: asyncpg.Connection, user_id: str) -> asyncpg.R
     Postgres filters it out before this function ever sees it.
     """
     return await conn.fetchrow(
-        "SELECT id, email, display_name, preferred_language FROM profiles WHERE id = $1",
+        "SELECT id, email, display_name, preferred_language, onboarding_completed "
+        "FROM profiles WHERE id = $1",
         user_id,
     )
 
 
 # Columns a profile owner may update. id / email are not client-mutable here.
-_UPDATABLE_COLUMNS = frozenset({"display_name", "preferred_language"})
+_UPDATABLE_COLUMNS = frozenset({"display_name", "preferred_language", "onboarding_completed"})
 
 
 async def update_profile(
@@ -42,6 +43,6 @@ async def update_profile(
 
     return await conn.fetchrow(
         f"UPDATE profiles SET {set_sql} WHERE id = ${id_param} "
-        "RETURNING id, email, display_name, preferred_language",
+        "RETURNING id, email, display_name, preferred_language, onboarding_completed",
         *values,
     )
