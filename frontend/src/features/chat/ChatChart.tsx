@@ -212,14 +212,53 @@ export function ChatChart({ payload, height = 240 }: { payload: ChartPayload; he
     );
   }
 
+  const isCircular = chart_type === 'pie' || chart_type === 'donut';
+  const total = data.reduce((sum, d) => sum + d.value, 0);
+
   return (
     <figure className="my-1 w-full">
-      {title && (
-        <figcaption className="mb-2 text-sm font-medium text-foreground">{title}</figcaption>
+      {/* Header: the assistant's title (when it gave one) plus the chart type, so
+          every chart names what it shows and which kind it is. */}
+      <figcaption className="mb-2">
+        {title && <div className="text-sm font-medium text-foreground">{title}</div>}
+        <div className="text-xs text-muted-foreground">{t(`chat.chartType.${chart_type}`)}</div>
+      </figcaption>
+
+      <div className="relative">
+        <ResponsiveContainer width="100%" height={height}>
+          {chart}
+        </ResponsiveContainer>
+        {/* Donut hole shows the total — the polished centre a bare ring lacks. */}
+        {chart_type === 'donut' && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-xs text-muted-foreground">{t('chat.chart.total')}</span>
+            <span className="text-base font-semibold text-foreground">
+              {formatValue(total, currency, locale)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Pie/donut have no axis to name their slices, so a legend pairing each
+          colour with its label and value is what makes them readable. Bar/column/
+          line already label every mark on the axis, so they need none. */}
+      {isCircular && (
+        <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+          {data.map((d) => (
+            <li key={d.label} className="flex items-center gap-1.5 text-xs">
+              <span
+                className="size-2.5 shrink-0 rounded-[2px]"
+                style={{ backgroundColor: d.color }}
+                aria-hidden
+              />
+              <span className="text-foreground">{d.label}</span>
+              <span className="text-muted-foreground">
+                {formatValue(d.value, currency, locale)}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
-      <ResponsiveContainer width="100%" height={height}>
-        {chart}
-      </ResponsiveContainer>
     </figure>
   );
 }

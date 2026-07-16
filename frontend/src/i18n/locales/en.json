@@ -330,6 +330,16 @@
     "table": {
       "empty": "No data"
     },
+    "chart": {
+      "total": "Total"
+    },
+    "chartType": {
+      "bar": "Bar chart",
+      "column": "Column chart",
+      "line": "Line chart",
+      "pie": "Pie chart",
+      "donut": "Donut chart"
+    },
     "composer": {
       "placeholder": "Message Apollon…",
       "send": "Send"
