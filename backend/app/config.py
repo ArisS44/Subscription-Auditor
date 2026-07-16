@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # iteration ceiling that stops a runaway loop.
     chat_history_window: int = 20
     chat_max_tool_iterations: int = 5
-    cors_allow_origins: str = "http://localhost:5173"
+    cors_allow_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175"
 
     @property
     def cors_allow_origins_list(self) -> list[str]:
