@@ -326,7 +326,10 @@
       "render_table": "Building a table…"
     },
     "loadingHistory": "Loading conversation…",
-    "structuredPlaceholder": "{{count}} chart or table (coming soon)",
+    "structuredUnavailable": "This chart or table couldn't be displayed.",
+    "table": {
+      "empty": "No data"
+    },
     "composer": {
       "placeholder": "Message Apollon…",
       "send": "Send"

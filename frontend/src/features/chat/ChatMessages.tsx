@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BarChart3, Clock, TriangleAlert } from 'lucide-react';
+import { Clock, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Markdown } from './Markdown';
+import { StructuredPayload } from './StructuredPayload';
 import type { ChatFailureReason, PendingTurn, StoredMessage } from './types';
 
 // Failures the user can simply retry (a cap they'll age out of, or the provider
@@ -39,34 +40,30 @@ function TurnError({ reason }: { reason: ChatFailureReason }) {
 // One turn in the transcript. The two roles are deliberately asymmetric: a user
 // turn is a compact right-aligned bubble (short, and the bubble marks it as
 // "mine"), while an assistant turn runs open and full-width with no background.
-// The assistant carries the long-form payload — markdown prose, and the charts
-// and tables Task 2.2 renders — which a width-capped tinted box would cramp;
-// unbubbled gives that content the whole column. Structured payloads show as a
-// placeholder chip until those typed renderers land.
+// The assistant carries the long-form payload — markdown prose plus any grounded
+// charts and tables — which a width-capped tinted box would cramp; unbubbled
+// gives that content the whole column. Each `structured` payload is rendered by
+// its typed component (chart/table), in arrival order below the text.
 function Turn({
   role,
   children,
-  structuredCount = 0,
+  structured = [],
 }: {
   role: 'user' | 'assistant';
   children: React.ReactNode;
-  structuredCount?: number;
+  structured?: Record<string, unknown>[];
 }) {
-  const { t } = useTranslation();
   const isUser = role === 'user';
 
-  const payloadChip = structuredCount > 0 && (
-    <div className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2 py-1 text-xs text-muted-foreground">
-      <BarChart3 className="size-3.5" aria-hidden />
-      {t('chat.structuredPlaceholder', { count: structuredCount })}
-    </div>
-  );
+  const payloads =
+    structured.length > 0 &&
+    structured.map((payload, i) => <StructuredPayload key={i} payload={payload} />);
 
   if (!isUser) {
     return (
       <div className="w-full text-sm text-foreground">
         {children}
-        {payloadChip}
+        {payloads}
       </div>
     );
   }
@@ -75,7 +72,7 @@ function Turn({
     <div className="flex w-full justify-end">
       <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
         {children}
-        {payloadChip}
+        {payloads}
       </div>
     </div>
   );
@@ -187,7 +184,7 @@ export function ChatMessages({
         <Turn
           key={m.id}
           role={m.role as 'user' | 'assistant'}
-          structuredCount={m.structured_payload ? 1 : 0}
+          structured={m.structured_payload ? [m.structured_payload] : []}
         >
           {m.role === 'assistant' ? (
             <Markdown content={m.content ?? ''} />
@@ -202,7 +199,7 @@ export function ChatMessages({
           <Turn role="user">
             <p className="whitespace-pre-wrap">{pending.userContent}</p>
           </Turn>
-          <Turn role="assistant" structuredCount={pending.structured.length}>
+          <Turn role="assistant" structured={pending.structured}>
             {pending.errorReason ? (
               <TurnError reason={pending.errorReason} />
             ) : pending.assistantContent ? (

@@ -326,7 +326,10 @@
       "render_table": "Δημιουργία πίνακα…"
     },
     "loadingHistory": "Φόρτωση συνομιλίας…",
-    "structuredPlaceholder": "{{count}} γράφημα ή πίνακας (σύντομα διαθέσιμο)",
+    "structuredUnavailable": "Αυτό το γράφημα ή ο πίνακας δεν ήταν δυνατό να εμφανιστεί.",
+    "table": {
+      "empty": "Χωρίς δεδομένα"
+    },
     "composer": {
       "placeholder": "Μήνυμα στον Απόλλωνα…",
       "send": "Αποστολή"

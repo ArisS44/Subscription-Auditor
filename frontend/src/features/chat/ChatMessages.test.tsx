@@ -105,17 +105,26 @@ describe('multi-tool turns', () => {
     expect(step.textContent).not.toContain('some_future_tool');
   });
 
-  it('counts every structured payload a turn produced', () => {
+  it('renders every structured payload a turn produced, as typed components', () => {
     renderPending(
       turn({
         assistantContent: 'Here you go.',
-        structured: [{ kind: 'chart' }, { kind: 'table' }],
+        structured: [
+          {
+            chart_type: 'bar',
+            title: 'Spend by category',
+            currency: 'EUR',
+            points: [{ label: 'Streaming', value: 12 }],
+          },
+          { title: 'Subscriptions', columns: ['Name', 'Price'], rows: [['Netflix', 9.99]] },
+        ],
         streaming: false,
       }),
     );
-    expect(
-      screen.getByText(i18n.t('chat.structuredPlaceholder', { count: 2 })),
-    ).toBeInTheDocument();
+    // A real table (the second payload) rather than a placeholder count chip.
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByText('Spend by category')).toBeInTheDocument();
+    expect(screen.getByText('Subscriptions')).toBeInTheDocument();
   });
 });
 

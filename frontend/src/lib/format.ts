@@ -9,6 +9,17 @@ export function formatCurrency(amount: number | string, currency: string, locale
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(amount));
 }
 
+/** Plain number, locale-grouped (e.g. `1,234.5` / `1.234,5`). For non-money
+ *  numerics — table cells, axis ticks without a currency. Trims to at most one
+ *  fraction digit so large tables stay scannable; pass `compact` for axis ticks
+ *  (`1.2K`). */
+export function formatNumber(value: number, locale: string, compact = false): string {
+  return new Intl.NumberFormat(locale, {
+    notation: compact ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 /** Medium date, e.g. `Aug 1, 2026` / `1 Αυγ 2026`. Accepts an ISO date string. */
 export function formatDate(isoDate: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(isoDate));
