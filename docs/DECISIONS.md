@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-07-16 — Chat multi-currency chart quality: deferred, not fixed this session
+
+**Decision:** Leave the chat agent's multi-currency chart behavior as-is for Session 3. The bigger fix
+(an FX-convert tool or a base-currency mode for `get_analytics`, letting the assistant answer "show
+everything in EUR") is deferred to a future session, not built now.
+
+**Why:** Task 2.2 found that for a multi-currency portfolio, the assistant currently flattens
+mismatched-scale currencies into one meaningless chart (e.g. plotting ¥14,161 next to €55.9 on one axis)
+because `get_analytics` has no conversion and a chart payload has only one `currency` field. In-chat
+currency conversion was already explicitly scoped out of Session 3 (see the 2026-07-09 entry above,
+"Currency Conversion" is Overview-only this session) — registering a real FX-convert tool would be a
+scope expansion, not a bug fix, so it doesn't belong in this session's remaining work.
+
+**How to apply:** when this is picked up, the smallest correct fix is prompt-level (instruct the model to
+render one chart per currency, or ask the user which currency to focus on, rather than mixing scales) —
+that alone resolves the "meaningless chart" symptom without new scope. A real FX-convert tool or
+base-currency `get_analytics` mode is the larger, separate feature that actually lets the assistant
+answer "how much do I spend total in EUR" — track both as distinct options for whichever future session
+picks this up, per auto-memory `chat-cross-currency-and-fx-gap`.
+
+---
+
 ## 2026-07-13 — LLM provider migration: Groq → Gemini Flash (Claude Haiku 4.5 fallback)
 
 **Decision:** Migrate the chat engine's default LLM provider from Groq (`llama-3.3-70b-versatile`) to
