@@ -705,3 +705,50 @@ setting. The partial index `subscriptions_active_next_renewal_date_idx` was adde
 reminder job scans renewals across *all* users and so has no `user_id` to filter on; every existing
 subscriptions index leads with `user_id` and cannot serve that scan.
 Look here: the `alter table subscriptions` block in the migration above.
+
+---
+
+## Session 4 — VAPID & job-token provisioning (2026-07-22)
+
+### VAPID proves provenance, not permission
+A push subscription's endpoint URL is a bearer-style capability: anyone holding it could POST to it and
+deliver a notification wearing this application's name, because the URL alone carries no proof of who may
+use it. VAPID closes that hole with one ECDSA P-256 keypair for the *whole application* (not per user). The
+public key is handed to `pushManager.subscribe()` and bound to the subscription at creation time; the
+backend then signs a JWT with the private key on every send, and the push service verifies it against that
+bound key. So the assertion is *"this push came from the same application the user granted permission to"* —
+a claim about the sender, which is why one application-wide key is the right granularity. The closest
+analogy is code signing rather than an API key: the verifier is checking provenance, not authorisation.
+Note the scope limit — VAPID protects the *endpoint*; payload confidentiality is a separate mechanism, the
+per-subscription `p256dh`/`auth` encryption keys the browser generates. Identity is global, confidentiality
+is per-user. Look here: `backend/app/config.py` (`vapid_*`), `infra/azure/README.md` §4.
+
+### A public key that is public on purpose
+`VITE_VAPID_PUBLIC_KEY` is baked into the frontend bundle and readable by anyone viewing source — by
+design, not by oversight. It is a *verification* key: it can check a signature but cannot create one, and
+recovering the private key from it is the elliptic-curve discrete log problem. The instinct that "key in a
+JS bundle = leak" is worth un-learning precisely here; a scheme that required hiding it would be broken,
+since the browser genuinely needs it at subscribe time over a channel the user can read. Look here:
+`frontend/.env.example`, `.github/workflows/frontend.yml`.
+
+### One secret, two homes — and why the count differs per secret
+The job token must exist in Key Vault (so the Container App can *verify* it) **and** in GitHub Actions (so
+the scheduled workflow can *send* it): it is a shared secret, and rotating one end without the other
+silently breaks every scheduled run. The VAPID private key needs only Key Vault, because nothing in CI ever
+signs a push. The general rule this teaches: a secret's distribution follows from which parties must
+*perform* an operation with it, not from how sensitive it feels. Look here: the distribution table in
+`infra/azure/README.md` §4.
+
+### `az keyvault secret set` prints the secret back
+By default it returns the full secret object — including `value` — as JSON, so a straightforward
+provisioning session leaves every secret in shell scrollback. `-o none` on each call is a security measure,
+not tidiness. Related: `az containerapp secret set` warns that a restart is required, which the following
+`containerapp update --set-env-vars` satisfies for free, since it creates a new revision. Look here: the
+command block in `infra/azure/README.md` §4.
+
+### Empty-string config defaults must fail closed at the point of use
+`job_token` defaults to `""` so local dev and the test suite run without it, matching how `vapid_*` and the
+optional LLM settings are declared. That convenience is only safe if the endpoint consuming it treats
+"unset" as *deny*, never as "no token required" — otherwise a misconfigured deployment silently exposes a
+publicly routable endpoint to the world. The default belongs in config; the fail-closed check belongs in
+the consumer. Look here: the `job_token` comment in `backend/app/config.py`.

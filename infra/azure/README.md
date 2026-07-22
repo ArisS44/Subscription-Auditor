@@ -222,7 +222,8 @@ az keyvault secret set --vault-name "$KV_NAME" --name cors-allow-origins --value
 ```
 
 (Optional/deferred secrets — `GROQ_API_KEY`, `VAPID_*`, `APPLICATIONINSIGHTS_CONNECTION_STRING` —
-have safe defaults in `config.py` and are not needed this session.)
+have safe defaults in `config.py` and are not needed this session. The `VAPID_*` secrets were
+provisioned later, when Web Push landed — see "Web Push and scheduled-job secrets" below.)
 
 ### Wire the Container App to reference these secrets
 
@@ -304,6 +305,92 @@ az containerapp update \
     LLM_MODEL=secretref:llm-model \
     LLM_API_KEY=secretref:llm-api-key \
     CHAT_GLOBAL_DAILY_CAP=secretref:chat-global-cap
+```
+
+### Web Push and scheduled-job secrets (added when notifications landed)
+
+Two independent secrets, with deliberately different distribution. Getting the asymmetry right is the
+whole point of this section.
+
+| Secret | Key Vault | Container App alias | Env var | GitHub Actions | Notes |
+|---|---|---|---|---|---|
+| VAPID private key | `vapid-private-key` | `vapid-private-key` | `VAPID_PRIVATE_KEY` | — | real secret; signs push JWTs |
+| VAPID subject | `vapid-subject` | `vapid-subject` | `VAPID_SUBJECT` | — | `mailto:` contact embedded in the signed JWT; not secret, stored here for consistency |
+| VAPID **public** key | — | — | — | `PROD_VITE_VAPID_PUBLIC_KEY` | **not a secret**; baked into the frontend bundle at build time |
+| Job token | `job-token` | `job-token` | `JOB_TOKEN` | `PROD_JOB_TOKEN` | shared secret; **must match in both places** |
+
+**Why the job token lives in two places:** it is a shared secret between the scheduled GitHub Actions
+workflow (which *sends* it in the `X-Job-Token` header) and the backend (which *verifies* it in
+constant time via `backend/app/security/compare.py`). Rotating it means updating Key Vault **and** the
+GitHub secret in the same sitting — updating one alone breaks every scheduled run.
+
+**Why the VAPID private key lives in only one:** nothing in CI ever signs a push, so GitHub has no
+reason to hold it. The public half goes to GitHub only because Vite needs build-time values, not for
+confidentiality.
+
+All three aliases fit under the 20-character Container App secret-key cap, so no shortening was needed
+here (unlike `sb-service-role-key` and `chat-global-cap` above).
+
+Generate the keypair locally — `cryptography` is already present in `backend/.venv` via
+`pyjwt[crypto]`, so this needs no new dependency and no third-party tool ever handles the key. The
+VAPID keypair is ECDSA P-256; the public key is the uncompressed EC point (`0x04 || X || Y`, 65 bytes)
+and the private key the raw 32-byte scalar, both base64url without padding — the encoding
+`py_vapid`/`pywebpush` expect. Expect 87 and 43 characters respectively.
+
+```bash
+# Generate (run in your own terminal; do not paste the private key anywhere)
+./backend/.venv/bin/python - <<'PY'
+import base64
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+key = ec.generate_private_key(ec.SECP256R1())
+pub = key.public_key().public_bytes(
+    serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+priv = key.private_numbers().private_value.to_bytes(32, "big")
+b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+print("VAPID_PUBLIC_KEY =", b64(pub))
+print("VAPID_PRIVATE_KEY =", b64(priv))
+PY
+
+# Job token: 384 bits of CSPRNG entropy - it is the only thing in front of a
+# publicly routable endpoint, so it must be guessable by no one.
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Note `-o none` on every command below: **`az keyvault secret set` echoes the secret value in its JSON
+output by default**, which would leave it in your shell scrollback.
+
+```bash
+az keyvault secret set --vault-name "$KV_NAME" --name vapid-private-key --value "$VAPID_PRIVATE_KEY" -o none
+az keyvault secret set --vault-name "$KV_NAME" --name vapid-subject     --value "$VAPID_SUBJECT"     -o none
+az keyvault secret set --vault-name "$KV_NAME" --name job-token         --value "$JOB_TOKEN"         -o none
+
+az containerapp secret set \
+  --resource-group "$RG" --name "$APP_NAME" \
+  --secrets \
+    vapid-private-key="keyvaultref:https://$KV_NAME.vault.azure.net/secrets/vapid-private-key,identityref:system" \
+    vapid-subject="keyvaultref:https://$KV_NAME.vault.azure.net/secrets/vapid-subject,identityref:system" \
+    job-token="keyvaultref:https://$KV_NAME.vault.azure.net/secrets/job-token,identityref:system" \
+  -o none
+
+az containerapp update \
+  --resource-group "$RG" --name "$APP_NAME" \
+  --set-env-vars \
+    VAPID_PRIVATE_KEY=secretref:vapid-private-key \
+    VAPID_SUBJECT=secretref:vapid-subject \
+    JOB_TOKEN=secretref:job-token \
+  -o none
+```
+
+`az containerapp secret set` warns that the app must be restarted for secret changes to take effect;
+the `update` that follows creates a new revision, which satisfies that. Verify without ever printing a
+value:
+
+```bash
+az containerapp show -g "$RG" -n "$APP_NAME" \
+  --query "properties.template.containers[0].env[?secretRef].{name:name, ref:secretRef}" -o table
+az containerapp revision list -g "$RG" -n "$APP_NAME" \
+  --query "[?properties.active].{rev:name, state:properties.runningState}" -o table
 ```
 
 ---

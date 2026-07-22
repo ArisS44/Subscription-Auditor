@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_public_key: str = ""
     vapid_subject: str = ""
+
+    # Shared secret authenticating the external scheduler's ping. There is no
+    # user and no JWT behind that request, so this token is the only thing in
+    # front of a publicly routable endpoint - it is compared in constant time
+    # (see app/security/compare.py). The empty default keeps local dev and the
+    # test suite runnable without it; the endpoint that consumes it must fail
+    # closed when it is unset rather than treating "no token configured" as
+    # "no token required".
+    job_token: str = ""
     applicationinsights_connection_string: str = ""
     env: str = "development"
     db_pool_min_size: int = 1
