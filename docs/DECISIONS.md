@@ -5,6 +5,103 @@
 
 ---
 
+## 2026-07-22 — Roadmap resequenced: notifications pulled into Session 4, usage-dependent work pushed behind the extension
+
+**Decision:** Sessions 4–6 are resequenced before Session 4 begins. Session 4 becomes **Reminders &
+Guidance** (push infrastructure + scheduler + renewal reminders + curated `service_guides` +
+`get_subscription_guide`, plus an early fix for the onboarding first-login defect). Session 5 becomes
+**Reports & Invoice Import**. Session 6 becomes **Browser Extension & Usage Intelligence**, absorbing
+`get_recommendation`, `cost_per_hour_target`, cost-per-hour, and the usage heatmap. `docs/APM_SESSIONS.md`
+is updated to match.
+
+**Why:** the original Session 4 was half-blocked on data that does not exist until Session 6. Cost-per-hour
+and the usage heatmap have no usage data at all; `cost_per_hour_target` is a threshold on a metric nothing
+can evaluate (dead UI a user can set but never benefit from); and `get_recommendation` reasoning from price
+and renewal date alone would have to be built twice — once thin, once properly once usage lands. Meanwhile
+the notification work has been fully unblocked since Session 1: `profiles.renewal_lead_days` and
+`profiles.monthly_review_enabled` have existed since the first migration, and `SettingsPanel.tsx` already
+renders the notification switches *disabled* behind a "coming soon" badge. The User's product judgement was
+that renewal reminders are what make this a usable product rather than a spreadsheet — it is the only
+feature that reaches out to the user rather than waiting to be opened. Sequencing by data-readiness rather
+than by the original thematic grouping delivers real value earlier and avoids building anything twice.
+
+The monthly-review notification moved *with* reports into Session 5 rather than staying with the other
+notifications, because its entire purpose is to surface a monthly report — shipping it in Session 4 would
+mean a notification pointing at nothing.
+
+**How to apply:** Session 4 must resolve the scheduler single-owner question rather than inheriting it (see
+the entry below). Two items previously scoped into Session 4 have no backing data and are deliberately not
+carried forward: **renewal history** on the detail view (subscriptions store only `next_renewal_date`; real
+history needs a snapshot mechanism that does not exist and was unscoped work hiding in a one-line bullet) —
+revisit it when there is a reason to build snapshots. When Session 5's report generator reuses
+`services/analytics.py`, it must preserve the per-currency grouping invariant: Session 2 shipped a real bug
+by ranking top expenses across currencies, and a report emitting a single blended total would reintroduce
+that class of bug.
+
+---
+
+## 2026-07-22 — Reminder delivery: Web Push now, email as a Session 7 adapter (not either/or)
+
+**Decision:** Renewal reminders ship over **Web Push only** in Session 4. Email reminders are not
+cancelled — they are deferred to Session 7 and will arrive as a second delivery adapter rather than a
+rebuild. The reminder engine (cron trigger, due-detection across per-user and per-subscription lead times,
+the delivery ledger and its idempotency constraint, cancelled/paused suppression, and bilingual message
+rendering) is kept **channel-agnostic**, with push as the only delivery implementation for now.
+
+**Why:** email is blocked on infrastructure that does not exist yet. Real app email requires a custom SMTP
+provider with a *verified sending domain*, which requires owning a domain — both already scheduled in
+Session 7 ("purchase a domain", "Production auth email (custom SMTP)", the latter explicitly dependent on
+the former). Supabase's built-in mailer is not an alternative: it is rate-limited and scoped to auth
+emails, and Session 1 already hit that ceiling during testing. Shipping email now would mean either pulling
+a domain purchase forward (cost, DNS, TLS, deliverability warm-up) or sending from an unverified domain
+into spam folders. Web Push needs one free VAPID keypair.
+
+On the merits the two are complementary rather than ranked. Email wins on reach and persistence (no
+install, no permission prompt, no per-device opt-in, no iOS Home Screen requirement; a reminder about money
+arguably belongs in an inbox as a record rather than a dismissible ping). Push wins on immediacy, zero
+marginal cost, no deliverability lottery, no unsubscribe-link compliance surface, and — consistent with this
+project's privacy positioning — no new sub-processor receiving the user's email address alongside their
+subscription data. Expect most users to deny the push permission prompt, which is the strongest argument
+for email eventually existing as the durable fallback.
+
+**How to apply:** roughly 70% of the notification work is channel-agnostic and must be structured that way
+from the start — "decide what to send" separated from "send it". This is the project's existing
+`routers/ → services/ → db/` layering applied normally, **not** a speculative abstraction built for one
+caller; the precedent is `services/llm.py`'s provider adapters, which already paid off when Groq was swapped
+for Gemini in Session 3. When Session 7 buys the domain and wires SMTP for auth email, the email reminder
+adapter becomes near-free work against an engine that already exists. Adding email will also require a
+Privacy Policy update for the new sub-processor (same pattern as the 2026-07-13 Google/Gemini entry).
+
+---
+
+## 2026-07-22 — Scheduler single-owner question resolved: external cron, not in-process APScheduler
+
+**Decision:** Scheduled work runs via a **GitHub Actions cron pinging a token-protected `/jobs/run-due`
+endpoint** on the backend, not in-process APScheduler. Idempotency comes from a delivery-ledger table with
+a uniqueness constraint on (user, subscription, renewal date), so a duplicate or retried ping cannot send a
+duplicate notification. `minReplicas: 0` is preserved — the ping itself wakes the container.
+
+**Why:** `ENGINEERING_STANDARDS.md` §A flags in-process APScheduler across horizontally-scaled replicas as a
+**correctness** bug, not a cost annoyance: every job fires N times, meaning N reminders and N reports. It
+required a single-owner mechanism and set the deadline at "before Session 5" — pulling notifications into
+Session 4 brought that deadline forward. Of the sanctioned options (advisory lock / dedicated single-replica
+scheduler / external pinger, per spec §9.4), the external pinger is strictly simplest: $0, no always-on
+replica, no APScheduler dependency, no leader election, and no scheduler process that needs to exist while
+the app is scaled to zero. The advisory-lock alternative would have required `minReplicas: 1` (~$5–15/mo)
+purely so a process exists to fire the job. It is also philosophically consistent with ADR 0003's
+lazy-refresh FX cache — this project consistently prefers "do the work when something asks" over "run a
+process that waits."
+
+**How to apply:** authenticate the ping with a shared job token using the **already-written but currently
+uncalled** `backend/app/security/compare.py` constant-time compare (written for the Session 6 extension
+token; this is its first real use). The job token lives in Key Vault and as a GitHub Actions secret. Note
+that this introduces the project's first **user-less** backend work: a scheduled job has no JWT and must
+legitimately act across all users, so it needs service-role access that bypasses RLS. Draw that boundary
+tightly — it is the first genuine least-privilege decision in the codebase, and every other endpoint to date
+runs under a user's JWT with RLS scoping it.
+
+---
+
 ## 2026-07-16 — Chat multi-currency chart quality: deferred, not fixed this session
 
 **Decision:** Leave the chat agent's multi-currency chart behavior as-is for Session 3. The bigger fix

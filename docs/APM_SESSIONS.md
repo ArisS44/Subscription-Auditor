@@ -69,68 +69,100 @@
 
 ---
 
-## Session 4 — Guidance, Insights & Reports
+> **⚠️ Roadmap revised 2026-07-22 (before Session 4 started).** Sessions 4–6 were resequenced:
+> notifications moved *up* into Session 4, and everything depending on usage data moved *down* behind the
+> browser extension. Sessions 1–3 below are unchanged and describe work already shipped. See
+> `docs/DECISIONS.md` (2026-07-22) for the full rationale.
 
-**Goal**: The "intelligent" half of the assistant — guidance lookups, recommendations, and monthly reports.
+## Session 4 — Reminders & Guidance
+
+**Goal**: The app starts reaching *out* to the user, and the assistant learns to advise on cancelling.
+This is the first session where the backend does work nobody requested — scheduled, user-less jobs.
 
 **Scope:**
-- Backend: seed `service_guides` table with ~15–20 curated services (Netflix, Spotify, ChatGPT, Claude, Gemini, Perplexity, GitHub Copilot, Cursor, Disney+, Apple Music, YouTube Premium, Notion, Dropbox, iCloud, Google One, etc.)
-- Backend: `get_subscription_guide` tool with hybrid lookup (curated DB → LLM fallback)
-- Backend: `get_recommendation` tool (analyzes usage data and price)
-- Backend: monthly report generator service (spend summary, AI-tool insights from extension data placeholder, streaming/other insights, AI-generated recommendations)
-- Backend: `/reports` endpoints (list, get by month, generate on demand)
-- Frontend: Reports & Insights tab (archive list, view single report, "generate now" button)
-- Frontend: graceful "early user" messaging when insights data is thin
-- Frontend: per-subscription detail view enhancements (usage heatmap placeholder, cost-per-hour calc, renewal history)
-- Frontend: budget alert threshold UI (set `cost_per_hour_target` per subscription)
+- Frontend: fix the first-login onboarding defect (new users see the dashboard load before the wizard
+  appears, and the wizard re-opens once after completion) — early, self-contained slice
+- **Scheduler (the previously-deferred single-owner question, resolved):** GitHub Actions cron pings a
+  token-protected `/jobs/run-due` endpoint. No APScheduler, no leader election, `minReplicas: 0`
+  preserved. A delivery-ledger table with a uniqueness constraint makes double-pings idempotent
+- Backend: VAPID key generation + Key Vault storage
+- Backend: `push_subscriptions` table (+ RLS + cross-user isolation test), `/push/subscribe` endpoints
+- Backend: push notification sender (`pywebpush`)
+- Backend: renewal reminder job — per-user `renewal_lead_days` **plus** an optional per-subscription
+  lead-time override (a 3-day warning on an annual renewal is nearly useless)
+- Backend: least-privilege boundary for user-less scheduled work (service-role access scoped tightly —
+  every other endpoint to date runs under a user's JWT with RLS)
+- Frontend: service worker for receiving push + showing notifications; permission opt-in UI
+- Frontend: notification preferences wired up in Settings (the switches currently render *disabled*)
+- Backend: seed `service_guides` table with ~15–20 curated services (Netflix, Spotify, ChatGPT, Claude,
+  Gemini, Perplexity, GitHub Copilot, Cursor, Disney+, Apple Music, YouTube Premium, Notion, Dropbox,
+  iCloud, Google One, etc.) — global reference data, authenticated-read RLS
+- Backend: `get_subscription_guide` tool with hybrid lookup (curated DB → LLM fallback). Curated URLs
+  render as links; LLM-sourced URLs are untrusted model output and must not be linkified
+- Backend: Apollon prompt tuned to permit data-grounded cancellation guidance
 
-**Done when**: chatbot can answer "how do I cancel X" and "should I keep X", monthly report can be generated and viewed, reports archive works.
+**Done when**: a real push reminder arrives on a real device ahead of a renewal, respecting both the
+per-user and per-subscription lead time; the chatbot can answer "how do I cancel Netflix" from curated
+data; the onboarding defect is gone.
 
 ---
 
-## Session 5 — Notifications & Invoice Import
+## Session 5 — Reports & Invoice Import
 
-**Goal**: Cross-device touchpoints and bulk subscription entry.
+**Goal**: Persisted monthly insight, and bulk subscription entry.
 
 **Scope:**
-- Backend: VAPID key generation + storage
-- Backend: `/push/subscribe` endpoints
-- Backend: push notification sender (`pywebpush`)
-- Backend: scheduled jobs via APScheduler for renewal reminders (daily check) and monthly review (1st of month)
-- Frontend: service worker for receiving push + showing notifications
-- Frontend: permission request UI
-- Frontend: notification preferences (lead time slider, monthly review toggle) wired up in settings
-- Frontend: Monthly Review landing page (form for non-trackable usage logging + AI insights below)
+- Backend: monthly report generator service (spend summary, top expense, upcoming renewals, trends,
+  AI-generated recommendations) — reuses Session 2's analytics service; **per-currency, never blended**
+- Backend: `/reports` endpoints (list, get by month, generate on demand)
+- Frontend: Reports & Insights tab (archive list, view single report, "generate now" button) — replaces
+  the current `ComingSoonPage` placeholder
+- Frontend: graceful "early user" messaging when insights data is thin
+- Backend: monthly review notification on the 1st — reuses Session 4's push + scheduler infrastructure,
+  and now has a real report to point at (this is why it moved here from Session 4)
+- Frontend: `monthly_review_enabled` toggle wired up; Monthly Review landing page (form for
+  non-trackable usage logging + AI insights below)
 - Backend: invoice upload endpoint (PDF / .eml / pasted text)
 - Backend: PDF extraction (`pdfplumber`) with OCR fallback (`pytesseract`)
-- Backend: LLM-driven subscription extraction from extracted text
+- Backend: LLM-driven subscription extraction from extracted text (untrusted input — prompt-injection
+  hardening applies with full force)
 - Backend: candidates confirmation endpoint
 - Frontend: invoice upload UI in onboarding and standalone (Settings → "Import from invoice")
 - Frontend: candidates review screen (accept/edit/reject each, bulk create on confirm)
 
-**Done when**: user gets renewal reminders 3 days before, gets a monthly review notification on the 1st, can upload a PDF and have subscriptions extracted.
+**Done when**: a monthly report can be generated, viewed, and browsed by month; the monthly review
+notification arrives on the 1st and opens that report; a PDF can be uploaded and subscriptions extracted.
 
 ---
 
-## Session 6 — Browser Extension
+## Session 6 — Browser Extension & Usage Intelligence
 
-**Goal**: Silent time tracking for AI tools.
+**Goal**: Silent time tracking — and the features that were blocked on having usage data at all.
 
 **Scope:**
 - Extension scaffolding (Manifest V3, Vite, TypeScript)
 - Service worker with active-tab + focus tracking
-- Domain matching against tracked AI tool list
-- Batched event sending to backend
-- Backend: `/extension/tokens` endpoints (issue, list, revoke)
+- Domain matching against the tracked domain list (**note:** the User has broadened this beyond
+  AI-tools-only — track as many subscriptions as a browser can actually observe; reconcile with
+  `docs/APP_DESCRIPTION.md` before this session starts)
+- Batched, idempotent event sending to backend
+- Backend: `/extension/tokens` endpoints (issue, list, revoke) — hashed tokens, constant-time compare
 - Backend: `/extension/usage` endpoint (batch ingest, uses extension token)
 - Backend: subscription matching logic (link incoming domain → user's subscriptions)
 - Backend: cost-per-hour computation from usage data
+- **Moved here from the original Session 4** — all of it was blocked on usage data:
+  - Backend: `get_recommendation` tool ("should I keep X?") — now able to reason from real usage, not
+    price alone
+  - Frontend: budget alert threshold UI (`cost_per_hour_target` per subscription) — a threshold on a
+    metric that now exists
+  - Frontend: per-subscription detail view — real usage chart, heatmap, and cost-per-hour replacing the
+    three placeholder cards
 - Frontend: extension management section in settings (issue token, list devices, revoke)
 - Frontend: pairing flow (display token, instructions to paste into extension)
-- Frontend: per-subscription detail view — real usage data + heatmap rendered
 - Extension build pipeline (GitHub Actions artifact, manual Web Store submission)
 
-**Done when**: extension installed, paired, tracking AI tool usage; cost-per-hour appears on subscription detail pages.
+**Done when**: extension installed, paired, tracking usage; cost-per-hour and the heatmap render real
+data on subscription detail pages; the chatbot can answer "should I keep X?" from actual usage.
 
 ---
 

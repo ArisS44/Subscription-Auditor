@@ -130,5 +130,32 @@ Apply the **Secure** and **Private & compliant** non-negotiables above. Always-o
 - **On this surface the Secure non-negotiables apply with full force.** Validate every LLM tool-call payload against its Pydantic schema **before** execution — a malformed call returns a clean error back to the model, never a partial or raw execution; never let raw model output trigger a privileged action or reach the DB unvalidated; render any model- or DB-sourced content with **no raw HTML** — sanitize markdown via DOMPurify with a tag allowlist and render structured chart/table payloads through typed components, never `dangerouslySetInnerHTML`.
 - **Ground every displayed figure in real data.** Numbers and rows shown in chat (charts, tables, analytics answers) must come from tool results computed against the database — never from values the model produced free-form.
 - **Never log message content or prompt/response text** (the "no PII/message content in logs" rule, with force here); per-call token-usage counts are fine.
+- **Never render a model-generated URL as a clickable link.** A URL the model produced is attacker-influenceable output pointing at an arbitrary destination, presented to the user inside a trusted surface. Model-sourced links are shown as plain text, clearly labelled as unverified. Only URLs from data the project controls (curated tables, user-entered values that passed backend validation) may be linkified. The backend never fetches a user- or model-supplied URL at all.
+
+## Scheduled & user-less work (any Task adding a code path not initiated by an authenticated user)
+
+- **A background job has no user and no JWT, so RLS cannot scope it** — it needs a service-role connection that bypasses row-level security. Draw that boundary as tightly as it will go: service-role access lives in the job's own data-access functions, is never widened into shared helpers that user-facing requests also call, and is never reachable from a user-authenticated route. The existing narrow-use precedents are `backend/app/db/fx.py` and `backend/app/db/usage.py`. This is the project's most consequential least-privilege decision — treat widening it as a change requiring justification, not a convenience.
+- **Any operation that can fire more than once must be idempotent by construction.** External triggers get retried, re-dispatched manually, and occasionally duplicated by the platform. Enforce "already done" with a database-level uniqueness constraint written *before* the side effect is attempted — not with an application-level check, which races. The test that matters is running the operation twice in a row and proving the side effect happened once.
+- **Endpoints authenticated by a shared token, not a JWT, are publicly routable.** Compare tokens with the constant-time helper in `backend/app/security/compare.py`; return an identical generic failure for missing, malformed, and wrong tokens so the response shape leaks nothing; and bound the work done per invocation rather than processing an unbounded result set.
+- **Log counts and outcomes, never contents.** The no-PII rule applies with full force to work the user did not initiate and cannot see.
+
+## Delivering messages to users (any Task on a notification or outbound-message surface)
+
+- **User-facing text produced by the backend is bilingual too.** The i18n rule under Frontend conventions is not frontend-only — any string the backend composes for a user (notification bodies, emails, scheduled messages) must exist in both `en` and `el`, selected from `profiles.preferred_language`, and must live in a dedicated copy module rather than inline in the logic that sends it. `auto` resolves to English when there is no user message to detect a language from.
+- **Separate deciding what to send from actually sending it.** Message composition, recipient selection, and scheduling logic must not know the delivery mechanism. Delivery is a collaborator, so a second channel can be added without touching the logic that decided a message was warranted.
+- **Consent must be revocable in fact, not just in appearance.** When a user withdraws consent for a delivery channel, the stored credential or subscription is deleted, not flagged or muted. Verify the row is gone rather than trusting the UI.
+- **Permanent delivery rejections prune, they do not retry.** A recipient the provider reports as permanently invalid is removed from storage. Distinguish this from transient failures, which are logged and left alone.
+
+## Database migrations (any Task adding or altering schema)
+
+- **Dev first, then prod, always via the CLI** — never the Supabase dashboard. Applying schema changes through the dashboard desynced production migration history once already in this project, and reconciling it cost real time. Dev and prod are independent Supabase projects; a migration that exists in only one of them is a latent production failure.
+- **Confirm which project the CLI is linked to before running anything**, and confirm authentication separately — `supabase db push` needs a valid login in addition to the link, and this has caused friction at the first migration of every session so far.
+- **Verify migration history state before and after applying to production.**
+
+## Validating work that cannot be verified locally
+
+- **Some deliverables are structurally unverifiable in the development environment** — anything requiring HTTPS, a real browser subscription, a real device, an external scheduler, or a live model call. For these, passing tests are evidence that the code is internally consistent, not evidence that the feature works.
+- **Do not declare such a Task complete on green tests.** Prepare exactly what the User needs to do to verify, then pause and ask, per the external-platform standard above. Report the outcome faithfully — including when live verification contradicts what the tests suggested.
+- **Prefer a live check over a stubbed one wherever a real one is possible.** This project's history is unambiguous on the point: live model and live device testing have repeatedly surfaced defects that passing unit tests did not, including provider schema rejections, history-replay bugs, and a duplicate-render bug. Treat findings from live verification as the expected outcome of a working process, not as a failure.
 
 } //APM_RULES
