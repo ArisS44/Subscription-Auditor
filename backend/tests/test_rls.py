@@ -25,8 +25,18 @@ async def test_cross_user_read_denied_by_rls(db_pool, user_a, user_b):
     test exists to catch.
     """
     user_a_id, token_a = user_a
-    user_b_id, _ = user_b
+    user_b_id, token_b = user_b
     claims_a = verify_token(token_a)
+    claims_b = verify_token(token_b)
+
+    # Positive control: B's profile must genuinely exist and be readable by B.
+    # Without this, the denial assertion below would pass just as greenly if the
+    # row were simply absent — proving nothing at all. Since the users are now
+    # shared across the suite rather than freshly minted per test, "the row is
+    # there to be hidden" is a precondition worth asserting rather than assuming.
+    async with rls_connection(claims_b) as conn:
+        own = await get_profile_by_id(conn, user_b_id)
+    assert own is not None and str(own["id"]) == user_b_id
 
     async with rls_connection(claims_a) as conn:
         row = await get_profile_by_id(conn, user_b_id)

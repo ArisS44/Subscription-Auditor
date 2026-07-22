@@ -302,3 +302,49 @@ notifications, invoice import, browser extension, hardening) happen now or later
 **Why:** solo, ~5 hrs/day, learning-while-building with live-teaching mode on. Keeping the deliverable
 adjustable protects momentum and guarantees something real is always live, while avoiding a
 commitment to full v2 scope regardless of how the build feels partway through.
+
+---
+
+## 2026-07-23 — Backend test users: session-scoped and shared, with a per-test reset
+
+**Decision:** The `user_a` / `user_b` fixtures in `backend/tests/conftest.py` no longer mint a fresh
+Supabase user per test function. Two users are created once per session and shared by the whole suite,
+and isolation is preserved by `_reset_user_data`, which wipes both users' rows and returns their profile
+fields to signup defaults **before** each test.
+
+**Why:** function-scoped user fixtures cost one real Auth Admin round-trip per test, and that cost grows
+with every table added. Measured before the change: 74 users and 222 Auth round-trips per full run,
+producing 1, 2 and 0 failures across three consecutive runs (and 8 in a run the previous day). The
+failures were Supabase rate-limiting, surfacing as `AuthError: Invalid authentication credentials` at a
+different test each run. After the change: 2 users and 6 round-trips, flat regardless of test count.
+
+This mattered because the project mandates a real cross-user RLS denial test for every user-scoped table.
+That rule is correct and stays — but it guarantees the user-creation rate climbs with each table, and the
+number of failures a developer is trained to dismiss as environmental climbs with it. The failure mode
+being avoided is a genuine regression waved through as noise.
+
+**Why cleanup runs before each test, not after:** teardown-only cleanup is skipped when a test fails or
+errors part-way, which leaves the *next* test to fail for an unrelated reason. Running it on setup makes
+every test's starting state unconditional.
+
+**The risk this trades into, and how it was closed:** a shared user with weak cleanup swaps a visible
+flake for an invisible false pass, which is strictly worse. A cross-user denial test that passes because
+the row was never created is indistinguishable from one that passes because RLS worked. This was closed
+two ways. Structurally, every denial test now asserts the owner *can* read the row before asserting the
+non-owner cannot, so an absent row fails the test rather than satisfying it (`test_rls.py` was the one
+missing this and gained it). Empirically, RLS was disabled on all six user-scoped tables and the denial
+tests were re-run: all six failed, confirming they detect a loss of denial rather than passing vacuously.
+RLS was then restored and verified on. `test_fixture_isolation.py` demonstrates the reset itself — one
+test deliberately leaves rows behind and the next asserts it cannot see them.
+
+**Costs accepted:** full-run time rose from ~197s to ~250s, because each test now opens a connection and
+issues seven cleanup statements. Reliability was the goal, not speed. The suite must also stay serial —
+sharing two users across parallel workers would reintroduce cross-test interference, so `pytest-xdist`
+cannot be added without revisiting this.
+
+**Rejected alternatives:** keeping function scope but skipping the delete call (cuts round-trips by a
+third, leaves the trajectory intact); sharing users without cleanup and hardening tests against leftover
+rows (that is loosening assertions, which this project does not do to make a run go green); and running
+Supabase locally in Docker, which removes the rate limit entirely rather than economising on it and
+remains the better long-term answer — it was out of scope here and the Docker daemon is not currently
+running on the dev machine.
