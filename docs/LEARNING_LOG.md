@@ -655,3 +655,53 @@ provider internals *and* request content), which the chat layer surfaces as a re
 by exhausting the live budget (root-cause) then a *paced* multi-turn run staying under TPM (no 413). Look
 here: the non-200 branch of `GroqAdapter.stream` and `StreamError.reason` in `backend/app/services/llm.py`,
 and the `StreamError` handling in `backend/app/services/chat.py`.
+
+## Session 4 — Notification & guidance schema (2026-07-22)
+
+### A delivery ledger: a UNIQUE constraint is a stronger idempotency guarantee than an application check
+Scheduled work fires more than once — platforms retry, someone re-runs a job by hand, two replicas overlap.
+The intuitive guard is "check whether I already sent this, then send", but that *races*: two callers can both
+read "not sent" before either writes, and both send. The window is small, which makes the bug rare and
+unreproducible rather than harmless. `notification_deliveries` inverts the order: the job INSERTs a claim row
+*before* attempting delivery, and a `UniqueViolationError` on
+`unique (user_id, subscription_id, kind, due_date)` means someone else already claimed it, so this invocation
+skips. An INSERT under a unique constraint is atomic in the storage engine — two concurrent inserts of the
+same key cannot both succeed, so there is no window at all. The table is therefore not primarily an audit log;
+it is the lock that makes sending safe, and the audit trail is a by-product. The four key columns are the
+identity of one notification: whose, about what, which type, for which date — so two different renewals of the
+same service are different keys and both send, while the same renewal claimed twice is one key.
+Look here: `supabase/migrations/20260722143000_create_notification_schema.sql`,
+`backend/tests/test_notification_rls.py::test_duplicate_delivery_claim_rejected_by_unique_constraint`.
+
+### Gotcha: `UNIQUE NULLS NOT DISTINCT` — the default treats NULLs as never equal
+In SQL, `NULL = NULL` is unknown, so a plain UNIQUE constraint treats two rows whose key contains NULL as
+*different* keys and accepts both. That silently breaks deduplication for exactly the rows that need it here:
+account-wide notification kinds (the `monthly_review` coming later) have no subscription, so `subscription_id`
+is NULL, and a default UNIQUE would happily let a duplicate monthly review through while appearing to protect
+it. Postgres 15+ `unique nulls not distinct` makes NULLs compare equal and closes the hole. Precedent already
+existed in this repo: `llm_usage_scope_day_uniq` uses it for the NULL-`user_id` app-wide counter row.
+Look here: `notification_deliveries_dedupe_uniq` in the migration above, and
+`backend/tests/test_notification_rls.py::test_duplicate_subscriptionless_claim_rejected`.
+
+### Global reference data takes a different RLS shape than user-scoped data
+Every user-scoped table here gets four policies (select/insert/update/delete) keyed on `auth.uid() = user_id`,
+which works because each row has an owner. `service_guides` has none — "how to cancel Netflix" belongs to
+nobody and every signed-in user reads the same row — so there is nothing to key on. It follows the `fx_rates`
+pattern instead: one `for select to authenticated using (true)` policy, and deliberately **no** write policy at
+all. The security control is the *absence* of a policy, because RLS denies by default: an operation with no
+matching policy is refused. The general lesson is that RLS policies grant rather than block, and blocking is
+what silence does. The denial shows up in two different forms, both correct — INSERT raises
+`InsufficientPrivilegeError` ("new row violates row-level security policy") because the row itself is checked,
+while UPDATE and DELETE simply match zero rows and quietly affect nothing.
+Look here: the `service_guides` block in the migration above, and
+`backend/tests/test_notification_rls.py::test_service_guides_readable_but_not_writable_by_users`.
+
+### Nullable-means-inherit avoids a backfill
+`subscriptions.reminder_lead_days` is nullable on purpose: NULL means "use my profile default", resolved as
+`coalesce(subscriptions.reminder_lead_days, profiles.renewal_lead_days)`. Because the absence of a value
+already carries the intended meaning, every pre-existing row is correct the moment the column is added and no
+data migration is needed — a useful trick whenever a new per-row override sits under an existing global
+setting. The partial index `subscriptions_active_next_renewal_date_idx` was added alongside it because the
+reminder job scans renewals across *all* users and so has no `user_id` to filter on; every existing
+subscriptions index leads with `user_id` and cannot serve that scan.
+Look here: the `alter table subscriptions` block in the migration above.
