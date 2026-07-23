@@ -30,9 +30,16 @@ export function useMe(accessToken: string | undefined) {
   });
 }
 
-/** PATCH /me. On success invalidates the ['me'] query so the profile refetches
- *  and the new values are reflected everywhere (sidebar, Settings) — and persist
- *  across a reload. Same TanStack Query pattern as the subscription mutations. */
+/** PATCH /me. On success writes the profile the PATCH already returned straight
+ *  into the ['me'] cache, then invalidates so any active observers also refetch.
+ *
+ *  The write is what makes onboarding completion correct: when the wizard is
+ *  mounted the dashboard is unmounted, so ['me'] has no active observer and a
+ *  bare invalidation marks the entry stale without refetching. On returning to
+ *  the dashboard the onboarding gate would then read a stale `onboarding_completed:
+ *  false` and redirect back into the wizard. Seeding the fresh value keeps the
+ *  gate's read correct immediately. Same TanStack Query pattern as the
+ *  subscription mutations, plus the explicit cache write. */
 export function useUpdateProfile(accessToken: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -47,7 +54,8 @@ export function useUpdateProfile(accessToken: string | undefined) {
       }
       return response.json() as Promise<Profile>;
     },
-    onSuccess: () => {
+    onSuccess: (profile) => {
+      queryClient.setQueryData(['me', accessToken], profile);
       void queryClient.invalidateQueries({ queryKey: ['me'] });
     },
   });

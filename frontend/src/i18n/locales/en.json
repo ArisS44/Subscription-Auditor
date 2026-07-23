@@ -57,6 +57,12 @@
       "text": "Finish setting up your account.",
       "continue": "Continue setup",
       "dismiss": "Dismiss for now"
+    },
+    "gate": {
+      "loading": "Loading your account",
+      "errorTitle": "We couldn't load your account",
+      "errorBody": "Something went wrong loading your profile. Please check your connection and try again.",
+      "retry": "Try again"
     }
   },
   "dashboard": {
