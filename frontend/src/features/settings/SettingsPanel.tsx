@@ -200,6 +200,20 @@ export function SettingsPanel() {
           ))}
         </CardContent>
       </Card>
+
+      {/* Attribution required by the CC BY 3.0 licence of the Apollon mark. */}
+      <p className="text-xs text-muted-foreground">
+        {t('settings.credits.apollon')}{' '}
+        <a
+          href="https://thenounproject.com/browse/icons/term/apollo/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          {t('settings.credits.nounProject')}
+        </a>{' '}
+        ({t('settings.credits.license')})
+      </p>
     </section>
   );
 }

@@ -342,6 +342,11 @@
       "weeklySummaryHint": "A weekly digest of your spending.",
       "monthlyInsights": "Monthly insights",
       "monthlyInsightsHint": "AI-written insights once a month."
+    },
+    "credits": {
+      "apollon": "Apollon mark: “apollo” by Maxicons from the",
+      "nounProject": "Noun Project",
+      "license": "CC BY 3.0"
     }
   },
   "pagination": {
