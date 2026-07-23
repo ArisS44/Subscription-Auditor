@@ -123,6 +123,9 @@ Apply the **Secure** and **Private & compliant** non-negotiables above. Always-o
 ## Per-user isolation testing (any Task adding a user-scoped table)
 
 - When introducing a table scoped by `user_id`, prove isolation with a **real-DB cross-user RLS-denial test** (a second user cannot read or modify the first user's rows), following the existing pattern in `backend/tests/test_rls.py`. This is not optional — RLS is the second security wall and must be verified, not assumed.
+- **A cross-user denial test must first prove the target row exists**, or it can pass vacuously — denying access to a row that was never created proves nothing. Include a positive-control assertion, as `test_chat_rls.py` and `test_notification_rls.py` do.
+- **The backend test suite shares two session-scoped Supabase users** (`conftest.py::_shared_users`), reset before each test by `_reset_user_data`. Any new user-scoped table **must be added to `_reset_user_data`'s delete list**, or its rows leak between tests as silent cross-test contamination rather than an obvious error. This is the cost of the shared-fixture design and is inseparable from the RLS-test rule above.
+- **The suite must run serially** — the shared users are not safe under `pytest-xdist` without per-worker user pairs. When judging whether a change caused a live-DB regression, run the full suite **three consecutive times**: the flakiness signal is noisy (8 failures one day, 1/2/0 the next on identical code), so a single run reaches confident wrong conclusions.
 
 ## AI chatbot & LLM integration (any Task on the chat/LLM surface)
 
