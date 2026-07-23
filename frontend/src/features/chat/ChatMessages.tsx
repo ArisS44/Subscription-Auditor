@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Clock, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ApollonMark } from '@/components/ApollonMark';
 import { Markdown } from './Markdown';
 import { StructuredPayload } from './StructuredPayload';
 import type { ChatFailureReason, PendingTurn, StoredMessage } from './types';
@@ -61,9 +62,20 @@ function Turn({
 
   if (!isUser) {
     return (
-      <div className="w-full rounded-2xl rounded-bl-sm bg-muted/40 px-4 py-3 text-sm text-foreground">
-        {children}
-        {payloads}
+      <div className="flex w-full gap-2.5">
+        {/* Apollon's mark as a small, quiet avatar. Decorative: the turn already
+            reads as the assistant's, so it's hidden from assistive tech rather
+            than announcing "Apollon" on every reply. */}
+        <span
+          className="mt-0.5 grid size-7 shrink-0 place-content-center rounded-lg bg-muted/50 text-foreground/75"
+          aria-hidden
+        >
+          <ApollonMark className="size-[18px]" />
+        </span>
+        <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm bg-muted/40 px-4 py-3 text-sm text-foreground">
+          {children}
+          {payloads}
+        </div>
       </div>
     );
   }
@@ -154,6 +166,7 @@ export function ChatMessages({
   if (empty) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+        <ApollonMark className="size-11 text-foreground/85" label="Apollon" />
         <div className="flex flex-col gap-1.5">
           <p className="text-sm font-medium text-foreground">{t('chat.empty.title')}</p>
           <p className="max-w-sm text-sm text-muted-foreground">{t('chat.empty.body')}</p>

@@ -1,0 +1,20 @@
+Subscription Auditor — third-party asset attributions
+======================================================
+
+Apollon mark (assistant identity, app icon set, notification icon)
+------------------------------------------------------------------
+"apollo" by Maxicons, from the Noun Project.
+Licensed under Creative Commons Attribution 3.0 (CC BY 3.0).
+https://thenounproject.com/browse/icons/term/apollo/
+License: https://creativecommons.org/licenses/by/3.0/
+
+Source assets derived from this icon in this repository:
+  frontend/public/apollon.svg
+  frontend/public/favicon.svg (paired "sun" glyph, original)
+  frontend/public/icons/apollon-*.png
+  frontend/public/icons/apollon-maskable-*.png
+  frontend/public/icons/apple-touch-icon.png
+  frontend/public/icons/notification-icon.png
+
+The small-size favicon and notification badge use an original "sun" glyph
+(not derived from the Noun Project icon) and carry no third-party attribution.

@@ -158,6 +158,11 @@ describe('empty state', () => {
     // Guard against the Greek locale silently falling back to the English copy.
     expect(screen.queryByText('Which subscriptions could I cut back?')).not.toBeInTheDocument();
   });
+
+  it('shows the Apollon mark as the assistant identity', () => {
+    renderEmpty();
+    expect(screen.getByRole('img', { name: 'Apollon' })).toBeInTheDocument();
+  });
 });
 
 describe('history', () => {

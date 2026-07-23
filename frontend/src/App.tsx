@@ -4,6 +4,7 @@ import { AuthProvider } from '@/features/auth/AuthProvider';
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute';
 import { DashboardShell } from '@/features/dashboard/DashboardShell';
 import { OnboardingFlow } from '@/features/onboarding/OnboardingFlow';
+import { OnboardingGate } from '@/features/onboarding/OnboardingGate';
 import { OverviewPage } from '@/features/dashboard/pages/OverviewPage';
 import { SubscriptionsPage } from '@/features/dashboard/pages/SubscriptionsPage';
 import { SubscriptionDetailPage } from '@/features/dashboard/pages/SubscriptionDetailPage';
@@ -48,7 +49,9 @@ function App() {
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <DashboardShell />
+                  <OnboardingGate>
+                    <DashboardShell />
+                  </OnboardingGate>
                 </ProtectedRoute>
               }
             >
