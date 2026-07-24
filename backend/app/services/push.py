@@ -47,7 +47,13 @@ class PushChannel:
     thread to avoid blocking the event loop."""
 
     async def send(
-        self, *, endpoint: str, p256dh: str, auth: str, payload_json: str
+        self,
+        *,
+        endpoint: str,
+        p256dh: str,
+        auth: str,
+        payload_json: str,
+        ttl: int | None = None,
     ) -> DeliveryOutcome:
         try:
             await asyncio.to_thread(
@@ -63,6 +69,10 @@ class PushChannel:
                 # hardcoded. pywebpush derives the `aud` and `exp` claims itself.
                 vapid_private_key=settings.vapid_private_key,
                 vapid_claims={"sub": settings.vapid_subject},
+                # TTL tells the push service how long to hold the message for a
+                # device that is offline at send time. Without it (pywebpush's
+                # default of 0) an asleep laptop drops the reminder entirely.
+                ttl=settings.push_ttl_seconds if ttl is None else ttl,
             )
             return DeliveryOutcome.DELIVERED
         except WebPushException as exc:
