@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # closed when it is unset rather than treating "no token configured" as
     # "no token required".
     job_token: str = ""
+    # Upper bound on subscriptions processed per run-due invocation. The endpoint
+    # is externally triggerable, so its work must be bounded rather than an
+    # unbounded scan; a run that hits the cap makes progress and the next run
+    # picks up the rest (ordering is deterministic).
+    reminder_job_batch_size: int = 100
     applicationinsights_connection_string: str = ""
     env: str = "development"
     db_pool_min_size: int = 1
