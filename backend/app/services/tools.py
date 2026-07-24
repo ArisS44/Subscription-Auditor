@@ -43,6 +43,7 @@ from app.models.subscription import (
     SubscriptionUpdate,
 )
 from app.services import analytics as analytics_svc
+from app.services import guides as guides_svc
 from app.services import profile as profile_svc
 from app.services import subscription as sub_svc
 from app.services.llm import ToolDef
@@ -377,6 +378,14 @@ class _NoArgs(BaseModel):
     """Empty argument model for tools that take no parameters."""
 
 
+class GetSubscriptionGuideArgs(BaseModel):
+    """A single free-text service name. Kept intentionally to one plain string
+    field so the Gemini schema rewrite has nothing exotic to trip on; dispatch
+    re-validates the payload against this model before the handler runs."""
+
+    service: str = Field(min_length=1, max_length=100)
+
+
 # ---------------------------------------------------------------------------
 # Handlers — thin adapters over existing services, each called with the caller's
 # claims so RLS applies. Service dicts are normalized through the response models
@@ -431,6 +440,13 @@ async def _get_user_settings(claims: dict, args: _NoArgs) -> dict:
 async def _update_user_settings(claims: dict, args: ProfileUpdate) -> dict:
     row = await profile_svc.update_my_profile(claims, args)
     return ProfileResponse(**row).model_dump(mode="json")
+
+
+async def _get_subscription_guide(claims: dict, args: GetSubscriptionGuideArgs) -> dict:
+    # Returns a two-tier result: curated (verified, may carry a real cancel_url)
+    # or unverified (model fills the gap; no linkified URL). The backend never
+    # fetches either URL.
+    return await guides_svc.get_guide(claims, args.service)
 
 
 async def _render_chart(claims: dict, args: RenderChartArgs) -> dict:
@@ -489,6 +505,17 @@ def _register_builtin_tools() -> None:
             "sorting, and pagination.",
             QuerySubscriptionsArgs,
             _query_subscriptions,
+        )
+    )
+    register(
+        ToolSpec(
+            "get_subscription_guide",
+            "Look up cancellation guidance for a named service (e.g. Netflix, "
+            "Spotify). Returns curated, verified steps and a cancel link when the "
+            "service is known, or an unverified result to guide from general "
+            "knowledge otherwise. The result's provenance field marks which.",
+            GetSubscriptionGuideArgs,
+            _get_subscription_guide,
         )
     )
     register(

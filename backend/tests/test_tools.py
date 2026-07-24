@@ -11,6 +11,7 @@ _EXPECTED_TOOLS = {
     "mark_subscription_cancelled",
     "delete_subscription",
     "query_subscriptions",
+    "get_subscription_guide",
     "get_analytics",
     "get_user_settings",
     "update_user_settings",
@@ -22,8 +23,9 @@ _EXPECTED_TOOLS = {
 def test_registry_has_exactly_the_session_tool_set():
     names = set(registered_tool_names())
     assert names == _EXPECTED_TOOLS
-    # Out-of-scope tools must not be present (not even stubbed).
-    assert "get_subscription_guide" not in names
+    # get_subscription_guide is now registered (this Task); get_recommendation is
+    # a later session and must still be absent.
+    assert "get_subscription_guide" in names
     assert "get_recommendation" not in names
 
 
@@ -247,6 +249,58 @@ async def test_get_analytics_returns_structured_rollup(db_pool, user_a):
     # Empty portfolio → empty containers, never null / never a crash.
     assert r.content["monthly_burn_by_currency"] == {}
     assert r.content["top_expenses"] == []
+
+
+# --------------------------------------------------------------------------
+# get_subscription_guide — two-tier provenance (real DB read of service_guides)
+# --------------------------------------------------------------------------
+async def test_guide_curated_lookup_returns_verified_steps_and_url(db_pool, user_a):
+    _, token = user_a
+    claims = verify_token(token)
+    r = await dispatch("get_subscription_guide", {"service": "Netflix"}, claims)
+    assert r.ok
+    assert r.content["provenance"] == "curated"
+    assert r.content["service_key"] == "netflix"
+    assert r.content["category"] == "streaming"
+    assert r.content["cancel_url"] == "https://www.netflix.com/cancelplan"
+    assert isinstance(r.content["cancel_steps"], list) and len(r.content["cancel_steps"]) >= 1
+
+
+async def test_guide_matches_by_display_name_not_only_slug(db_pool, user_a):
+    _, token = user_a
+    claims = verify_token(token)
+    # "Disney+" is the display_name; the slug is disney_plus. Name match resolves.
+    r = await dispatch("get_subscription_guide", {"service": "Disney+"}, claims)
+    assert r.ok and r.content["provenance"] == "curated"
+    assert r.content["service_key"] == "disney_plus"
+
+
+async def test_guide_uncurated_is_unverified_with_no_url(db_pool, user_a):
+    _, token = user_a
+    claims = verify_token(token)
+    r = await dispatch("get_subscription_guide", {"service": "Some Obscure Service 9000"}, claims)
+    assert r.ok
+    assert r.content["provenance"] == "unverified"
+    # No URL is carried for an uncurated service — a model-supplied link must never
+    # be presented as verified.
+    assert r.content["cancel_url"] is None
+    assert "unverified" in r.content["note"].lower()
+
+
+async def test_guide_rejects_empty_service(db_pool, user_a):
+    _, token = user_a
+    claims = verify_token(token)
+    r = await dispatch("get_subscription_guide", {"service": ""}, claims)
+    assert not r.ok
+    assert "service" in r.content["error"]
+
+
+def test_guide_tool_gemini_schema_is_a_simple_string_field():
+    defs = {d.name: d for d in tool_definitions("gemini")}
+    params = defs["get_subscription_guide"].parameters
+    assert params["type"] == "object"
+    assert params["properties"]["service"]["type"] == "string"
+    assert params["required"] == ["service"]
 
 
 async def test_tool_cannot_cross_user_boundary(db_pool, user_a, user_b):

@@ -34,9 +34,25 @@ def test_no_fabricated_success_rule_present(prompt: str) -> None:
 def test_ask_dont_invent_rule_present(prompt: str) -> None:
     low = prompt.lower()
     assert "ask the user for those details" in low
-    # Must forbid filling gaps with invented placeholder values.
+    # Must forbid inventing a price/billing/date the user did not give — the
+    # financially-material values that must be asked for, not filled in.
     assert "never invent" in low
-    assert "placeholder value" in low
+    assert "price, a billing cycle, or a" in low
+
+
+@_prompt
+def test_category_is_classification_not_fabrication(prompt: str) -> None:
+    """The corrected rule: category is a classification the model SHOULD assign to
+    a recognisable service, distinct from the price/date it must never invent.
+    This guards the chat-created-subscription-uncategorised defect from
+    regressing."""
+    low = prompt.lower()
+    assert "category is different" in low
+    assert "you should set it" in low
+    # The five-value taxonomy is named so the model classifies against it.
+    assert "streaming" in low and "cloud_storage" in low
+    # But price/date invention protection is explicitly preserved.
+    assert "unknowable and financially material" in low
 
 
 @_prompt
