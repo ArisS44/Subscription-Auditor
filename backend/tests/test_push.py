@@ -214,6 +214,28 @@ async def test_timeout_failure_retains_subscription(db_pool, user_a, monkeypatch
         assert len(await push_db.list_subscriptions(conn)) == 1
 
 
+async def test_send_passes_positive_ttl_so_offline_devices_are_not_dropped(
+    db_pool, user_a, monkeypatch
+):
+    """A TTL must reach the push service, or a device asleep at send time drops the
+    reminder entirely (pywebpush's default ttl=0 means 'deliver now or discard')."""
+    _, token = user_a
+    claims = verify_token(token)
+    await push_svc.subscribe(claims, push_svc.PushSubscriptionCreate(**_sub_body()))
+
+    captured = {}
+
+    def _capture(*args, **kwargs):
+        captured.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr(push_svc, "webpush", _capture)
+    await push_svc.deliver_to_user(claims, push_svc.NotificationPayload(title="t", body="b"))
+
+    assert captured.get("ttl", 0) > 0
+    assert captured["ttl"] == settings.push_ttl_seconds
+
+
 async def test_fanout_is_best_effort_across_devices(db_pool, user_a, monkeypatch):
     """One dead endpoint does not abort delivery to the others: a mix of a 410
     (prune) and a success leaves exactly the live row."""

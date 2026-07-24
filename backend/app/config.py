@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     # closed when it is unset rather than treating "no token configured" as
     # "no token required".
     job_token: str = ""
+    # How long (seconds) the push service holds an undeliverable message before
+    # discarding it. pywebpush defaults to 0 = "deliver now or drop", which loses
+    # every reminder for a device that is asleep/offline at send time. A renewal
+    # reminder is date-anchored, so it should survive until the user's device next
+    # comes online within the lead window — 72h covers a closed laptop over a
+    # weekend and comfortably spans the default 3-day lead. Environment-tunable.
+    push_ttl_seconds: int = 259200
     # Upper bound on subscriptions processed per run-due invocation. The endpoint
     # is externally triggerable, so its work must be bounded rather than an
     # unbounded scan; a run that hits the cap makes progress and the next run
