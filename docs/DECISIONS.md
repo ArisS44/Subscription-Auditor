@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-07-24 — Reminder delivery is at-most-once, and the ledger key is channel-blind (a Session 7 decision deferred, not settled)
+
+**Decision:** Session 4's reminder engine is deliberately **at-most-once**. It claims a
+`notification_deliveries` row *before* attempting delivery (the mandated idempotency mechanism from the
+scheduler decision), and any existing claim suppresses re-send. Two consequences are accepted for this
+session and flagged for a future one rather than fixed now: (1) a reminder whose every device send fails
+transiently is consumed and not retried, and (2) the ledger key `(user_id, subscription_id, kind,
+due_date)` has **no channel dimension**, so once a renewal is claimed by push, the future **email**
+channel will also be suppressed for that same renewal even though email never sent.
+
+**Why accepted now:** at-most-once is the correct reading of "never double-send", which is the guarantee
+that actually matters for a money reminder delivered to a device — a duplicate ping is worse than a missed
+one, and the app's own Overview upcoming-renewals list is the standing authoritative fallback (Spec:
+"delivery is best-effort", "must not present notifications as guaranteed"). Push-only ships this session,
+so the channel-blindness is latent, not active. Adding a channel dimension or a retry-lease now would be
+speculative design ahead of email's actual semantics, and a nullable-column migration later is cheap.
+
+**How to apply (Session 7, when email lands as the second adapter):** this partially qualifies the
+2026-07-22 "email as a second adapter, not a rebuild" entry — the *engine* is reusable untouched, but the
+*ledger* is not channel-ready. Before email sends its first reminder, decide between: adding a `channel`
+column to the ledger and its uniqueness key (each channel claims independently); or gating re-send on
+`delivered_at IS NULL` with a retry lease (turning at-most-once into at-least-once-per-channel). Either
+must preserve the exactly-once-**per-channel** guarantee — the fix must not reintroduce double-sends. The
+engine already leaves `delivered_at` NULL when nothing delivered, which is the hook a retry scheme would
+gate on. Note a prod backfill: existing rows would need `channel='push'` stamped.
+
+---
+
 ## 2026-07-22 — Roadmap resequenced: notifications pulled into Session 4, usage-dependent work pushed behind the extension
 
 **Decision:** Sessions 4–6 are resequenced before Session 4 begins. Session 4 becomes **Reminders &
