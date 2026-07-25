@@ -1,4 +1,25 @@
 {
+  "notifications": {
+    "optIn": {
+      "description": "Get a reminder before a subscription renews.",
+      "enable": "Enable notifications",
+      "enabling": "Enabling…",
+      "enabled": "Notifications are on",
+      "enabledHint": "We'll remind you before a subscription renews.",
+      "blocked": "Notifications are blocked",
+      "blockedHint": "Turn them on in your browser's site settings to get renewal reminders.",
+      "unsupported": "Notifications aren't supported here",
+      "unsupportedHint": "This browser can't show push notifications.",
+      "error": "Couldn't enable notifications. Please try again.",
+      "checking": "Checking your subscriptions…",
+      "needsSubscription": "Add a subscription first — a reminder needs something to remind you about.",
+      "ios": {
+        "title": "Add to your Home Screen to turn on notifications",
+        "step1": "Tap the Share button",
+        "step2": "Choose “Add to Home Screen”"
+      }
+    }
+  },
   "landing": {
     "title": "Subscription Auditor",
     "subtitle": "Track, analyze, and optimize your recurring subscriptions.",
@@ -46,7 +67,7 @@
     },
     "notifications": {
       "title": "Renewal reminders",
-      "body": "Push reminders before a subscription renews are coming soon. You'll be able to opt in when they land."
+      "body": "Get a heads-up before a subscription renews, so nothing bills you by surprise."
     },
     "done": {
       "title": "You're all set",
