@@ -5,8 +5,12 @@ rules can never drift between the two.
 
 Language handling is a runtime concern (it depends on the caller's
 `profiles.preferred_language`), so the constants describe the *rule* and
-`build_system_prompt` appends the concrete directive per request.
+`build_system_prompt` appends the concrete directive per request. The current
+date is likewise appended per request (never baked into the static block, which
+is evaluated once at import and would freeze the date at process start).
 """
+
+from datetime import date
 
 # Shared across both variants: who Apollon is, tone, scope, safety rules. Tool
 # names/descriptions/parameters stay in English regardless of the user's
@@ -83,10 +87,17 @@ them. Keep momentum — one clear next step at a time."""
 
 def build_system_prompt(preferred_language: str, *, onboarding: bool = False) -> str:
     """Finalise a system prompt for one request by appending the language
-    directive derived from the user's `profiles.preferred_language`.
+    directive derived from the user's `profiles.preferred_language`, plus the
+    actual current date.
 
     `en`/`el` pin the reply language; `auto` (the default) tells the model to
     detect and match the language of the user's most recent message.
+
+    The current date is computed here, at call time, so a long-running server
+    reports the correct day rather than the day it started. It gives the model a
+    reference for resolving relative dates ("today", "last month") the user
+    actually expressed — it does NOT license defaulting a date the user never
+    gave, which the anti-fabrication rule in the identity block still forbids.
     """
     base = APOLLON_ONBOARDING_SYSTEM_PROMPT if onboarding else APOLLON_SYSTEM_PROMPT
     if preferred_language == "en":
@@ -98,4 +109,12 @@ def build_system_prompt(preferred_language: str, *, onboarding: bool = False) ->
             "Detect the language of the user's most recent message and respond in "
             "that same language (English or Greek)."
         )
-    return f"{base}\n\nLanguage: {directive}"
+    today = date.today().isoformat()
+    date_directive = (
+        f"Today's date is {today} (ISO YYYY-MM-DD). When the user expresses a date "
+        "relatively — 'today', 'yesterday', 'last month', 'since last week' — resolve "
+        "it against this date before calling a tool. This is only for resolving a date "
+        "the user actually stated: it does not permit you to supply a start date the "
+        "user did not give. If a subscription's start date is absent, still ask for it."
+    )
+    return f"{base}\n\nCurrent date: {date_directive}\n\nLanguage: {directive}"
