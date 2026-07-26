@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-07-26 — iOS Web Push ships code-complete but on-device-unverified; frontend gets a strict CSP this session
+
+**iOS verification — accepted unverified.** The Web Push opt-in, service worker, and PWA manifest are
+implemented and the **desktop** path is live-verified (subscribe → notification displayed → click focuses
+the dashboard). The **iOS on-device** path is not verified: iOS grants Web Push only to a Home-Screen-
+installed PWA over HTTPS, which localhost cannot provide, and the developer currently has no iPhone. The
+User chose to **ship the iOS code complete but unverified on-device** rather than block on borrowing a
+device or a cloud real-device service. Consequence: iOS-specific install/delivery behaviour could contain
+an undetected defect; the iOS instruction surface and manifest are written to spec but unproven on a real
+device. If an iPhone/iPad becomes available later, the verification is a five-minute check against the
+deployed HTTPS build (Share → Add to Home Screen → open installed → opt in → fire a test). The
+session's acceptance criteria and Task 3.2 are adjusted so iOS on-device is an explicitly-accepted gap,
+not an open failure. The desktop/Android Web Push path — the same standard — remains fully verified.
+
+**Frontend CSP — added this session.** The app served by Azure Static Web Apps currently has **no
+Content-Security-Policy** (`staticwebapp.config.json` defines only `navigationFallback`; the strict
+`default-src 'none'` lives only on the backend API's own responses, which never serve the SPA). This is a
+standing gap against the project's "ship a strict CSP" non-negotiable, pre-existing rather than introduced
+by the notification work, but the new service worker and manifest make it timely. The User chose to
+**close it this session before deploy** rather than defer to the Session 7 hardening pass. A strict policy
+is added to the served frontend via `staticwebapp.config.json` global headers, allowing exactly what the
+app legitimately loads — `worker-src 'self'` and `manifest-src 'self'` for the new PWA surface,
+`connect-src` for the backend API and Supabase, and whatever the existing auth/CAPTCHA flow requires — and
+**verified live** (login with Turnstile, chat SSE streaming, push registration, all API calls) so the
+policy hardens without breaking the running app.
+
+---
+
 ## 2026-07-24 — Reminder delivery is at-most-once, and the ledger key is channel-blind (a Session 7 decision deferred, not settled)
 
 **Decision:** Session 4's reminder engine is deliberately **at-most-once**. It claims a
