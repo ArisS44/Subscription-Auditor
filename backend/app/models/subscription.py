@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, BeforeValidator, Field, TypeAdapter
 
+from app.models.common import LeadDays
+
 # Enum value sets, kept byte-for-byte identical to the CHECK constraints in
 # supabase/migrations/..._create_subscriptions_table.sql. Two independent walls
 # enforce the same rule (defense in depth): Pydantic rejects bad input at the API
@@ -71,6 +73,13 @@ class SubscriptionCreate(BaseModel):
     status: SubscriptionStatus = "active"
     notes: str | None = Field(default=None, max_length=_NOTES_MAX)
     manage_url: ManageUrl | None = None
+    # Optional per-subscription override of the reminder lead time. NULL is a
+    # meaningful value, not a missing one: it means "inherit the user's
+    # profiles.renewal_lead_days", which is how the reminder engine resolves it
+    # (COALESCE). So an omitted or explicitly-null value is stored as NULL and
+    # must never be coerced to a number. Contrast the profile default, where an
+    # explicit null is rejected — there is nothing left for it to inherit from.
+    reminder_lead_days: LeadDays | None = None
 
 
 class SubscriptionUpdate(BaseModel):
@@ -90,6 +99,9 @@ class SubscriptionUpdate(BaseModel):
     cancellation_date: date | None = None
     notes: str | None = Field(default=None, max_length=_NOTES_MAX)
     manage_url: ManageUrl | None = None
+    # Explicitly sending null here clears the override back to "inherit"; the
+    # service's `exclude_unset` dump is what distinguishes that from omitting it.
+    reminder_lead_days: LeadDays | None = None
 
 
 class SubscriptionResponse(BaseModel):
@@ -110,6 +122,9 @@ class SubscriptionResponse(BaseModel):
     # Loose str on output (already validated on write), mirroring how `currency`
     # is a plain str here but a constrained type on create/update.
     manage_url: str | None = None
+    # None means "inherit the profile default" — a real state the client renders
+    # differently from an explicit override, so it is never filled in here.
+    reminder_lead_days: int | None = None
     created_at: datetime
     updated_at: datetime
 
