@@ -1,5 +1,12 @@
 import asyncpg
 
+# The full response column set. Kept as one constant — as `db/subscriptions.py`
+# does — so the SELECT and the UPDATE ... RETURNING list cannot drift apart.
+_COLUMNS = (
+    "id, email, display_name, preferred_language, onboarding_completed, "
+    "renewal_lead_days, monthly_review_enabled"
+)
+
 
 async def get_profile_by_id(conn: asyncpg.Connection, user_id: str) -> asyncpg.Record | None:
     """Fetch a profile row by id, scoped by whatever RLS context the given
@@ -10,14 +17,18 @@ async def get_profile_by_id(conn: asyncpg.Connection, user_id: str) -> asyncpg.R
     Postgres filters it out before this function ever sees it.
     """
     return await conn.fetchrow(
-        "SELECT id, email, display_name, preferred_language, onboarding_completed "
-        "FROM profiles WHERE id = $1",
+        f"SELECT {_COLUMNS} FROM profiles WHERE id = $1",
         user_id,
     )
 
 
-# Columns a profile owner may update. id / email are not client-mutable here.
-_UPDATABLE_COLUMNS = frozenset({"display_name", "preferred_language", "onboarding_completed"})
+# Columns a profile owner may update. id / email are not client-mutable here, and
+# `monthly_review_enabled` is deliberately excluded: it is readable but not
+# writable, and this allowlist is the wall that enforces that at the data layer —
+# a key absent from here never becomes a SET clause, whatever the client sent.
+_UPDATABLE_COLUMNS = frozenset(
+    {"display_name", "preferred_language", "onboarding_completed", "renewal_lead_days"}
+)
 
 
 async def update_profile(
@@ -42,7 +53,6 @@ async def update_profile(
     values.append(user_id)
 
     return await conn.fetchrow(
-        f"UPDATE profiles SET {set_sql} WHERE id = ${id_param} "
-        "RETURNING id, email, display_name, preferred_language, onboarding_completed",
+        f"UPDATE profiles SET {set_sql} WHERE id = ${id_param} RETURNING {_COLUMNS}",
         *values,
     )

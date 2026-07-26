@@ -241,6 +241,46 @@ async def test_add_then_query_round_trip(db_pool, user_a):
     assert "RoundTrip" in names
 
 
+async def test_lead_days_are_exposed_to_the_chat_surface_and_range_validated(db_pool, user_a):
+    """The tools reuse SubscriptionCreate / ProfileUpdate directly, so exposing the
+    lead-time fields on the API exposes them to the model too. That is intended
+    (the user can ask "remind me a week ahead"), but it means the model's payload
+    is now a path to these columns — so the range validation has to hold on this
+    surface as well, and an out-of-range call must come back as a clean tool error
+    rather than reaching the database."""
+    _, token = user_a
+    claims = verify_token(token)
+
+    added = await dispatch("add_subscription", _sub_args(reminder_lead_days=6), claims)
+    assert added.ok
+    assert added.content["reminder_lead_days"] == 6
+
+    # Omitted → NULL, i.e. inherit the profile default (never coerced to a number).
+    inherited = await dispatch("add_subscription", _sub_args(name="Inherits"), claims)
+    assert inherited.ok
+    assert inherited.content["reminder_lead_days"] is None
+
+    settings_r = await dispatch("update_user_settings", {"renewal_lead_days": 2}, claims)
+    assert settings_r.ok
+    assert settings_r.content["renewal_lead_days"] == 2
+
+    for bad in (999, -1):
+        r = await dispatch("add_subscription", _sub_args(reminder_lead_days=bad), claims)
+        assert not r.ok, f"reminder_lead_days={bad} must be rejected before execution"
+        r2 = await dispatch("update_user_settings", {"renewal_lead_days": bad}, claims)
+        assert not r2.ok, f"renewal_lead_days={bad} must be rejected before execution"
+
+
+async def test_monthly_review_is_not_writable_from_the_chat_surface(db_pool, user_a):
+    """update_user_settings reuses ProfileUpdate, so the field's absence from that
+    model is what keeps the model from flipping a feature that has not shipped."""
+    _, token = user_a
+    claims = verify_token(token)
+    r = await dispatch("update_user_settings", {"monthly_review_enabled": False}, claims)
+    assert r.ok  # unknown field ignored, not an error
+    assert r.content["monthly_review_enabled"] is True  # but unchanged
+
+
 async def test_get_analytics_returns_structured_rollup(db_pool, user_a):
     _, token = user_a
     claims = verify_token(token)

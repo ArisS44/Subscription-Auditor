@@ -783,3 +783,39 @@ TypeScript 5.7 the array's element type must be backed by a plain `ArrayBuffer` 
 fine — a build-only error the test suite does not catch. Allocating `new Uint8Array(new ArrayBuffer(len))`
 and typing the return `Uint8Array<ArrayBuffer>` fixes it at the source. Look here:
 `urlBase64ToUint8Array` in `frontend/src/features/notifications/push-support.ts`.
+
+## Session 4 — Exposing the lead-time fields (2026-07-26)
+
+### "Read-only field" is not a property of the field — it is two absences
+`profiles.monthly_review_enabled` must be readable (so a disabled Settings switch shows the real stored
+value rather than a hardcoded guess) but not writable (its feature ships later, and a control that appears
+to work while doing nothing is worse than an obviously-inert one). Nothing in the code says "read-only".
+The guarantee is produced by the field being missing from **two** places: from `ProfileUpdate`, so Pydantic
+discards the key while parsing the request body, and from `_UPDATABLE_COLUMNS` in `db/profiles.py`, so no
+`SET` clause is ever built for it even if a key did reach the data layer. Either absence alone is
+sufficient; both together is the usual defense-in-depth shape. The allowlist is the load-bearing one,
+because it filters *column names* — the only reason a client-supplied key can never become SQL. Worth
+knowing that a "cannot write this" test passes just as greenly when it is testing nothing, so the way to
+trust it is to make the field writable on purpose and confirm the test goes red. Look here:
+`_UPDATABLE_COLUMNS` in `backend/app/db/profiles.py` and the `ProfileUpdate` docstring.
+
+### The same nullable column can mean opposite things on two surfaces
+`subscriptions.reminder_lead_days` and `profiles.renewal_lead_days` are the same type with the same range,
+resolved together by `COALESCE(s.reminder_lead_days, p.renewal_lead_days)` in the reminder engine. But NULL
+means opposite things. On the subscription it is a *real value* — "inherit the user's default" — so an
+explicit `null` must be accepted and stored, and a missing value must never be coerced to a number. On the
+profile it is the thing being inherited *from*, so a NULL there leaves the COALESCE with nothing to resolve
+to; an explicit null is rejected. Pydantic expresses that asymmetry neatly, because **a field validator does
+not run when the field is left unset** (validators skip defaults unless `validate_default=True`) — so a
+validator that rejects `None` makes "omitted" a valid no-op and "explicitly null" a clean 422, which is
+otherwise awkward to distinguish. Look here: `_reject_explicit_null` in `backend/app/models/profile.py`.
+
+### Reusing a request model in the LLM tool registry couples two surfaces on purpose
+The chat tools do not define their own argument schemas for writes: `add_subscription` reuses
+`SubscriptionCreate` and `update_user_settings` reuses `ProfileUpdate` directly. So adding a field to an API
+model *automatically* adds it to the model-facing tool schema — the user can now say "remind me a week
+before" with no tool change. That is the intended payoff of the registry design, but it means the API model
+is the security boundary for two callers at once, and a field's validation has to be judged against the
+untrusted one. Concretely: the range bound is what stops a model-produced `reminder_lead_days: 999` from
+reaching the database. Look here: the `ToolSpec` registrations at the bottom of
+`backend/app/services/tools.py`.

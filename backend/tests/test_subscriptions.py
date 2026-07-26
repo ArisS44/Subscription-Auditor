@@ -5,6 +5,10 @@ from app.db import subscriptions as subs_db
 from app.db.rls import rls_connection
 from app.deps import verify_token
 from app.middleware.rate_limit import _storage
+from app.models.profile import ProfileUpdate
+from app.models.subscription import SubscriptionCreate
+from app.services import profile as profile_svc
+from app.services import subscription as sub_svc
 
 BASE = "/api/v1/subscriptions"
 
@@ -289,6 +293,173 @@ def test_patch_me_rejects_bad_language(test_client, user_a):
 
 
 # --------------------------------------------------------------------------
+# Reminder lead time: per-user default (profile) and per-subscription override
+# --------------------------------------------------------------------------
+def test_patch_me_persists_renewal_lead_days(test_client, user_a):
+    _, token = user_a
+    _storage.reset()
+
+    # The fixture resets this to the DB default of 3, so 7 is a real change.
+    assert test_client.get("/api/v1/me", headers=_auth(token)).json()["renewal_lead_days"] == 3
+
+    r = test_client.patch("/api/v1/me", headers=_auth(token), json={"renewal_lead_days": 7})
+    assert r.status_code == 200
+    assert r.json()["renewal_lead_days"] == 7
+
+    # Persisted, not just echoed back from the request body.
+    assert test_client.get("/api/v1/me", headers=_auth(token)).json()["renewal_lead_days"] == 7
+
+
+def test_patch_me_rejects_out_of_range_renewal_lead_days(test_client, user_a):
+    """Pydantic must reject before the DB CHECK is reached — a clean 422, not a 500
+    from a constraint violation surfacing as an unhandled asyncpg error."""
+    _, token = user_a
+    for bad in (999, -1, 31):
+        _storage.reset()
+        r = test_client.patch("/api/v1/me", headers=_auth(token), json={"renewal_lead_days": bad})
+        assert r.status_code == 422, f"renewal_lead_days={bad} should be 422, got {r.status_code}"
+
+
+def test_patch_me_rejects_explicit_null_renewal_lead_days(test_client, user_a):
+    """Null is not a valid profile default: it is the value a subscription's NULL
+    inherits via COALESCE, so nulling it would leave nothing to resolve to.
+    Omitting the field is still a valid no-op — asserted below."""
+    _, token = user_a
+    _storage.reset()
+    r = test_client.patch("/api/v1/me", headers=_auth(token), json={"renewal_lead_days": None})
+    assert r.status_code == 422
+
+    # Omitted (not null) leaves it untouched rather than erroring.
+    _storage.reset()
+    ok = test_client.patch("/api/v1/me", headers=_auth(token), json={"display_name": "Aris"})
+    assert ok.status_code == 200
+    assert ok.json()["renewal_lead_days"] == 3
+
+
+def test_monthly_review_enabled_is_readable_but_not_writable(test_client, user_a):
+    """The monthly-review feature ships in a later session and its Settings control
+    stays disabled, so the field must be readable (to show the true stored value)
+    but must not be changeable — enforced by its absence from both ProfileUpdate
+    and the _UPDATABLE_COLUMNS allowlist."""
+    _, token = user_a
+    _storage.reset()
+
+    before = test_client.get("/api/v1/me", headers=_auth(token)).json()
+    assert before["monthly_review_enabled"] is True  # readable, from the DB default
+
+    # Pydantic ignores the unknown field rather than 422-ing, so the request
+    # succeeds — what matters is that the stored value did not move.
+    _storage.reset()
+    r = test_client.patch(
+        "/api/v1/me", headers=_auth(token), json={"monthly_review_enabled": False}
+    )
+    assert r.status_code == 200
+    assert r.json()["monthly_review_enabled"] is True
+
+    _storage.reset()
+    after = test_client.get("/api/v1/me", headers=_auth(token)).json()
+    assert after["monthly_review_enabled"] is True  # unchanged in the database
+
+
+def test_create_without_reminder_lead_days_stores_null_meaning_inherit(test_client, user_a):
+    _, token = user_a
+    body = test_client.post(BASE, headers=_auth(token), json=_payload()).json()
+    # Not coerced to the profile's number — NULL is preserved as "inherit".
+    assert body["reminder_lead_days"] is None
+
+
+def test_create_with_reminder_lead_days_persists_the_override(test_client, user_a):
+    _, token = user_a
+    created = test_client.post(
+        BASE, headers=_auth(token), json=_payload(reminder_lead_days=10)
+    ).json()
+    assert created["reminder_lead_days"] == 10
+
+    got = test_client.get(f"{BASE}/{created['id']}", headers=_auth(token)).json()
+    assert got["reminder_lead_days"] == 10  # round-trips on read
+
+
+def test_update_sets_and_clears_reminder_lead_days(test_client, user_a):
+    """Setting an override, then clearing it back to NULL (inherit), must both
+    work — clearing relies on `exclude_unset` distinguishing an explicit null from
+    an omitted field."""
+    _, token = user_a
+    sub = test_client.post(BASE, headers=_auth(token), json=_payload()).json()
+
+    set_r = test_client.patch(
+        f"{BASE}/{sub['id']}", headers=_auth(token), json={"reminder_lead_days": 1}
+    )
+    assert set_r.status_code == 200
+    assert set_r.json()["reminder_lead_days"] == 1
+
+    cleared = test_client.patch(
+        f"{BASE}/{sub['id']}", headers=_auth(token), json={"reminder_lead_days": None}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["reminder_lead_days"] is None
+
+    # Confirmed in the database, not just in the response.
+    assert (
+        test_client.get(f"{BASE}/{sub['id']}", headers=_auth(token)).json()["reminder_lead_days"]
+        is None
+    )
+
+
+def test_update_omitting_reminder_lead_days_leaves_the_override_intact(test_client, user_a):
+    """An unrelated PATCH must not silently clear the override — the difference
+    between "omitted" and "explicitly null" has to survive the round trip."""
+    _, token = user_a
+    sub = test_client.post(BASE, headers=_auth(token), json=_payload(reminder_lead_days=5)).json()
+    updated = test_client.patch(
+        f"{BASE}/{sub['id']}", headers=_auth(token), json={"name": "Renamed"}
+    ).json()
+    assert updated["reminder_lead_days"] == 5
+
+
+def test_subscription_reminder_lead_days_out_of_range_returns_422(test_client, user_a):
+    _, token = user_a
+    for bad in (999, -1, 31):
+        r = test_client.post(BASE, headers=_auth(token), json=_payload(reminder_lead_days=bad))
+        assert r.status_code == 422, f"create {bad} should be 422, got {r.status_code}"
+
+    sub = test_client.post(BASE, headers=_auth(token), json=_payload()).json()
+    for bad in (999, -1, 31):
+        r = test_client.patch(
+            f"{BASE}/{sub['id']}", headers=_auth(token), json={"reminder_lead_days": bad}
+        )
+        assert r.status_code == 422, f"update {bad} should be 422, got {r.status_code}"
+
+
+async def test_stored_lead_days_resolve_through_the_engines_coalesce(db_pool, user_a):
+    """Exposing the fields only matters if the values reach what the reminder engine
+    actually reads. Write a profile default and a per-subscription override through
+    the service layer, then assert the COALESCE the engine uses resolves to each.
+
+    Deliberately not via `test_client`: per conftest, the TestClient's pool lives on
+    Starlette's portal-thread loop while `db_pool` is on pytest-asyncio's, so mixing
+    them raises "another operation is in progress". The HTTP surface is covered by
+    the sync tests above; this one covers the service → DB pass-through.
+    """
+    _, token = user_a
+    claims = verify_token(token)
+
+    await profile_svc.update_my_profile(claims, ProfileUpdate(renewal_lead_days=4))
+    inherit = await sub_svc.create_subscription(claims, SubscriptionCreate(**_payload()))
+    override = await sub_svc.create_subscription(
+        claims, SubscriptionCreate(**_payload(reminder_lead_days=9))
+    )
+    assert inherit["reminder_lead_days"] is None  # stored as "inherit", not a number
+
+    async with rls_connection(claims) as conn:
+        sql = (
+            "SELECT coalesce(s.reminder_lead_days, p.renewal_lead_days) AS effective "
+            "FROM subscriptions s JOIN profiles p ON p.id = s.user_id WHERE s.id = $1::uuid"
+        )
+        assert await conn.fetchval(sql, inherit["id"]) == 4  # inherited the profile default
+        assert await conn.fetchval(sql, override["id"]) == 9  # override wins
+
+
+# --------------------------------------------------------------------------
 # Real-DB cross-user RLS denial (second security wall) — mirrors test_rls.py
 # --------------------------------------------------------------------------
 async def test_cross_user_subscription_denied_by_rls(db_pool, user_a, user_b):
@@ -318,6 +489,7 @@ async def test_cross_user_subscription_denied_by_rls(db_pool, user_a, user_b):
             status="active",
             notes=None,
             manage_url=None,
+            reminder_lead_days=None,
         )
     sub_id = str(row["id"])
 

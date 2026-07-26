@@ -104,6 +104,9 @@ async def create_subscription(claims: dict, payload: SubscriptionCreate) -> dict
             status=data["status"],
             notes=data["notes"],
             manage_url=data["manage_url"],
+            # Passed through untouched: None stays None so the reminder engine's
+            # COALESCE inherits the user's profile default.
+            reminder_lead_days=data["reminder_lead_days"],
         )
     return dict(row)
 
