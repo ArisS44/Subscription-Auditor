@@ -752,3 +752,34 @@ optional LLM settings are declared. That convenience is only safe if the endpoin
 "unset" as *deny*, never as "no token required" — otherwise a misconfigured deployment silently exposes a
 publicly routable endpoint to the world. The default belongs in config; the fail-closed check belongs in
 the consumer. Look here: the `job_token` comment in `backend/app/config.py`.
+
+## Session 4 — Service Worker & Web Push, frontend (2026-07-26)
+
+### A service worker is a separate program, not a component
+The mental model that makes push click: a service worker runs *outside any page*, in a context the browser
+owns. It cannot touch the DOM, React state, or the app's memory; it communicates only through events and
+`postMessage`. Crucially it holds **no memory between events** — the browser starts it to handle an event,
+then terminates it — which is why it is written as `addEventListener` handlers, not top-to-bottom code. This
+is exactly what lets a notification arrive with no tab open: the browser's push service *wakes* the worker
+on a `push` event, it calls `showNotification`, and the browser lets it sleep again. Its **scope comes from
+where the file is served** (`/sw.js` at the origin root ⇒ controls the whole app), so it lives in `public/`
+as a plain static asset, never imported into the Vite/TS bundle. Look here: `frontend/public/sw.js`, and
+the load-time registration in `frontend/src/main.tsx`.
+
+### iOS Web Push has two hard gates that desktop does not
+Two constraints shape the whole iOS story. First, iOS grants Web Push **only to a site installed to the
+Home Screen** — there is no in-page install prompt, so the only thing the app can do on an iOS Safari tab is
+*instruct* (Share → Add to Home Screen), which is why the opt-in has an iOS-only branch. Second, service
+workers and push need a **secure context**: `localhost` is exempt, but a `http://` LAN address is not — so a
+real-iPhone push cannot be exercised against the dev server, only against an HTTPS origin (deployed build or
+a tunnel). The practical lesson: some deliverables are unverifiable in dev by construction, and iOS push is
+one — green desktop tests are necessary but not sufficient. Look here:
+`frontend/src/features/notifications/push-support.ts` (`isIOS`/`isStandalone`) and `NotificationOptIn.tsx`.
+
+### `pushManager.subscribe` needs the VAPID key as bytes, backed by a real ArrayBuffer
+The VAPID public key ships as a base64url string but `applicationServerKey` wants a `Uint8Array`. Under
+TypeScript 5.7 the array's element type must be backed by a plain `ArrayBuffer` (not the generic
+`ArrayBufferLike`, which includes `SharedArrayBuffer`), or the assignment fails to type-check while running
+fine — a build-only error the test suite does not catch. Allocating `new Uint8Array(new ArrayBuffer(len))`
+and typing the return `Uint8Array<ArrayBuffer>` fixes it at the source. Look here:
+`urlBase64ToUint8Array` in `frontend/src/features/notifications/push-support.ts`.

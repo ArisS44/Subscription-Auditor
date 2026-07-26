@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ChatView } from '@/features/chat/ChatView';
+import { NotificationOptIn } from '@/features/notifications/NotificationOptIn';
 import { SubscriptionFormDialog } from '@/features/subscriptions/SubscriptionFormDialog';
+import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useOnboarding } from './useOnboarding';
 import { ONBOARDING_STEPS, type OnboardingMethod } from './onboarding-state';
 
@@ -126,13 +128,7 @@ function StepContent({
       );
     case 'notifications':
       return (
-        <StubStep
-          icon={Bell}
-          titleKey="onboarding.notifications.title"
-          bodyKey="onboarding.notifications.body"
-          onNext={flow.goNext}
-          onBack={flow.goBack}
-        />
+        <NotificationStep accessToken={accessToken} onNext={flow.goNext} onBack={flow.goBack} />
       );
     case 'done':
       return <DoneStep onFinish={onFinish} finishing={flow.completing} />;
@@ -291,6 +287,54 @@ function StubStep({
             <p className="text-sm text-muted-foreground">{t(bodyKey)}</p>
           </div>
         </div>
+        <StepFooter onBack={onBack} onNext={onNext} nextKey="onboarding.continue" bare />
+      </div>
+    </StepCard>
+  );
+}
+
+// The notification opt-in step. A reminder needs something to remind about, so
+// the opt-in only appears once the user has at least one subscription; otherwise
+// it explains why. Either way the footer's Skip/Continue advances — declining (or
+// having nothing to enable yet) never blocks finishing onboarding.
+function NotificationStep({
+  accessToken,
+  onNext,
+  onBack,
+}: {
+  accessToken: string | undefined;
+  onNext: () => void;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation();
+  const subsQuery = useSubscriptions(accessToken, { limit: 1 });
+  const hasSubscription = (subsQuery.data?.total ?? 0) > 0;
+
+  return (
+    <StepCard>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1 text-center">
+          <h1 className="font-heading text-2xl font-semibold">
+            {t('onboarding.notifications.title')}
+          </h1>
+          <p className="text-sm text-muted-foreground">{t('onboarding.notifications.body')}</p>
+        </div>
+
+        {subsQuery.isPending ? (
+          <p className="text-center text-sm text-muted-foreground">
+            {t('notifications.optIn.checking')}
+          </p>
+        ) : hasSubscription ? (
+          <NotificationOptIn />
+        ) : (
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
+            <Bell className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+            <p className="text-sm text-muted-foreground">
+              {t('notifications.optIn.needsSubscription')}
+            </p>
+          </div>
+        )}
+
         <StepFooter onBack={onBack} onNext={onNext} nextKey="onboarding.continue" bare />
       </div>
     </StepCard>
