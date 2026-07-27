@@ -29,7 +29,7 @@ beforeEach(async () => {
 describe('LeadTimeChips', () => {
   it('shows Inherit as active when the value is null', () => {
     render(<Harness initial={null} spy={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /inherit/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /default/i })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -38,15 +38,15 @@ describe('LeadTimeChips', () => {
   it('emits the preset (an override) when a preset chip is clicked', async () => {
     const spy = vi.fn();
     render(<Harness initial={null} spy={spy} />);
-    await userEvent.click(screen.getByRole('button', { name: '7d' }));
+    await userEvent.click(screen.getByRole('button', { name: '7' }));
     expect(spy).toHaveBeenLastCalledWith(7);
-    expect(screen.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '7' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('clears back to inherit (null) from an override', async () => {
     const spy = vi.fn();
     render(<Harness initial={7} spy={spy} />);
-    await userEvent.click(screen.getByRole('button', { name: /inherit/i }));
+    await userEvent.click(screen.getByRole('button', { name: /default/i }));
     expect(spy).toHaveBeenLastCalledWith(null);
   });
 

@@ -12,6 +12,7 @@
       "unsupportedHint": "This browser can't show push notifications.",
       "error": "Couldn't enable notifications. Please try again.",
       "checking": "Checking your subscriptions…",
+      "checkingDevice": "Checking this device…",
       "needsSubscription": "Add a subscription first — a reminder needs something to remind you about.",
       "ios": {
         "title": "Add to your Home Screen to turn on notifications",
@@ -20,8 +21,8 @@
       }
     },
     "leadTime": {
-      "inherit": "Inherit ({{days}}d)",
-      "days": "{{days}}d",
+      "inherit": "Default ({{days}})",
+      "days": "{{days}}",
       "custom": "Custom",
       "customLabel": "Custom lead time in days",
       "daysSuffix": "days before renewal"
@@ -236,7 +237,7 @@
         "manageUrlPlaceholder": "https://provider.com/account/billing",
         "manageUrlHint": "Optional. A link to where you manage or cancel this subscription.",
         "reminderLead": "Reminder lead time",
-        "reminderLeadHint": "When to remind you before this renews. “Inherit” uses your account default."
+        "reminderLeadHint": "When to remind you before this renews. “Default” uses your account setting."
       },
       "categoryNone": "Uncategorized",
       "datePlaceholder": "Pick a date",

@@ -296,22 +296,6 @@ export function SubscriptionFormDialog({
               <FieldError errors={[errors.notes]} />
             </Field>
 
-            <Field>
-              <FieldLabel htmlFor="sub-manage-url">
-                {t('subscriptions.form.fields.manageUrl')}
-              </FieldLabel>
-              <Input
-                id="sub-manage-url"
-                type="url"
-                inputMode="url"
-                autoComplete="off"
-                placeholder={t('subscriptions.form.fields.manageUrlPlaceholder')}
-                {...register('manage_url')}
-              />
-              <FieldDescription>{t('subscriptions.form.fields.manageUrlHint')}</FieldDescription>
-              <FieldError errors={[errors.manage_url]} />
-            </Field>
-
             <Controller
               control={control}
               name="reminder_lead_days"
@@ -333,6 +317,24 @@ export function SubscriptionFormDialog({
                 </Field>
               )}
             />
+
+            {/* The manage/cancel link is deliberately last — the reminder field
+                above it is more important and stays visible without scrolling. */}
+            <Field>
+              <FieldLabel htmlFor="sub-manage-url">
+                {t('subscriptions.form.fields.manageUrl')}
+              </FieldLabel>
+              <Input
+                id="sub-manage-url"
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                placeholder={t('subscriptions.form.fields.manageUrlPlaceholder')}
+                {...register('manage_url')}
+              />
+              <FieldDescription>{t('subscriptions.form.fields.manageUrlHint')}</FieldDescription>
+              <FieldError errors={[errors.manage_url]} />
+            </Field>
 
             {errors.root && (
               <p role="alert" className="text-sm text-destructive">

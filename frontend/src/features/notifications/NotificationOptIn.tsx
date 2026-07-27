@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bell, BellOff, BellRing, Check, Share } from 'lucide-react';
+import { Bell, BellOff, BellRing, Check, Loader2, Share } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-context';
 import { Button } from '@/components/ui/button';
 import { usePushSubscribe } from '@/hooks/usePushSubscribe';
+import { usePushDevices } from '@/hooks/usePushDevices';
 import { isIOS, isPushSupported, isStandalone, notificationPermission } from './push-support';
 
 /** A single explanatory status row — an icon, a title, and a hint line. Used for
@@ -81,8 +82,31 @@ function StepNumber({ children }: { children: ReactNode }) {
 export function NotificationOptIn() {
   const { t } = useTranslation();
   const { session } = useAuth();
-  const subscribe = usePushSubscribe(session?.access_token);
+  const accessToken = session?.access_token;
+  const subscribe = usePushSubscribe(accessToken);
+  const devicesQuery = usePushDevices(accessToken);
   const [permission, setPermission] = useState(() => notificationPermission());
+  // This browser's current push-subscription endpoint: undefined while unknown,
+  // null when there is none. Compared against the backend device list so the
+  // "on" state survives a reload (it no longer depends on a this-session mutation)
+  // and flips back off after the device is revoked.
+  const [endpoint, setEndpoint] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isPushSupported()) return;
+    navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((subscription) => {
+        if (!cancelled) setEndpoint(subscription?.endpoint ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setEndpoint(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // iOS in a browser tab: must be installed to the Home Screen first.
   if (isIOS() && !isStandalone()) {
@@ -109,7 +133,13 @@ export function NotificationOptIn() {
     );
   }
 
-  if (permission === 'granted' && subscribe.isSuccess) {
+  // Registered = this browser's endpoint is one the backend currently stores.
+  const registered =
+    endpoint != null &&
+    (devicesQuery.data?.some((device) => device.endpoint === endpoint) ?? false);
+  const enabled = permission === 'granted' && (subscribe.isSuccess || registered);
+
+  if (enabled) {
     return (
       <StatusRow
         icon={Check}
@@ -117,6 +147,25 @@ export function NotificationOptIn() {
         title={t('notifications.optIn.enabled')}
         hint={t('notifications.optIn.enabledHint')}
       />
+    );
+  }
+
+  // While permission is granted, hold off on the button until we know whether this
+  // device is already registered — otherwise it flashes on a reload of an
+  // already-enabled device.
+  const checking =
+    permission === 'granted' &&
+    !subscribe.isSuccess &&
+    (endpoint === undefined || devicesQuery.isPending);
+  if (checking) {
+    return (
+      <div
+        className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-muted-foreground"
+        role="status"
+        aria-label={t('notifications.optIn.checkingDevice')}
+      >
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+      </div>
     );
   }
 

@@ -91,10 +91,10 @@ describe('NotificationsCard', () => {
     renderCard(fetchMock);
 
     // Profile loaded: the stored value (3) is the active chip.
-    const three = await screen.findByRole('button', { name: '3d' });
+    const three = await screen.findByRole('button', { name: '3' });
     expect(three).toHaveAttribute('aria-pressed', 'true');
 
-    await userEvent.click(screen.getByRole('button', { name: '7d' }));
+    await userEvent.click(screen.getByRole('button', { name: '7' }));
 
     await waitFor(() => {
       const patch = calls.find((c) => c.url.includes('/me') && c.method === 'PATCH');
