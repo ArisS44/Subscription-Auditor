@@ -17,6 +17,7 @@ const valid = {
   next_renewal_date: '',
   notes: '',
   manage_url: '',
+  reminder_lead_days: null,
 };
 
 describe('subscription form schema', () => {
@@ -78,5 +79,21 @@ describe('subscription form schema', () => {
 
   it('rejects a malformed manage_url', () => {
     expect(schema.safeParse({ ...valid, manage_url: 'not a url' }).success).toBe(false);
+  });
+
+  it('accepts null reminder_lead_days (inherit the user default)', () => {
+    expect(schema.safeParse({ ...valid, reminder_lead_days: null }).success).toBe(true);
+  });
+
+  it('accepts an in-range reminder_lead_days override', () => {
+    expect(schema.safeParse({ ...valid, reminder_lead_days: 7 }).success).toBe(true);
+    expect(schema.safeParse({ ...valid, reminder_lead_days: 0 }).success).toBe(true);
+    expect(schema.safeParse({ ...valid, reminder_lead_days: 30 }).success).toBe(true);
+  });
+
+  it('rejects an out-of-range or non-integer reminder_lead_days', () => {
+    expect(schema.safeParse({ ...valid, reminder_lead_days: 31 }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, reminder_lead_days: -1 }).success).toBe(false);
+    expect(schema.safeParse({ ...valid, reminder_lead_days: 3.5 }).success).toBe(false);
   });
 });

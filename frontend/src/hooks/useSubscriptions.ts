@@ -30,6 +30,10 @@ export interface Subscription {
   // Optional user-provided link to the provider's manage/cancel page. Display-only;
   // the backend validates it as a well-formed http(s) URL (≤2048 chars).
   manage_url: string | null;
+  // Per-subscription reminder lead time in days (0–30). `null` is a distinct state
+  // meaning "inherit the user's renewal_lead_days default" — never the same as any
+  // number, and not a missing value.
+  reminder_lead_days: number | null;
   created_at: string; // ISO datetime
   updated_at: string;
 }
@@ -63,6 +67,9 @@ export interface SubscriptionCreateInput {
   notes?: string | null;
   // Optional provider manage/cancel link. null clears it; omit to leave unchanged.
   manage_url?: string | null;
+  // Reminder lead time (0–30). null means "inherit the user default"; omit to
+  // leave unchanged on an update.
+  reminder_lead_days?: number | null;
 }
 
 // Partial update: every field optional; only what changes is sent.

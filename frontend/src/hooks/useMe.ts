@@ -7,13 +7,21 @@ export interface Profile {
   display_name: string | null;
   preferred_language: string;
   onboarding_completed: boolean;
+  // Per-user default reminder lead time in days (0–30). Subscriptions with a null
+  // reminder_lead_days inherit this value.
+  renewal_lead_days: number;
+  // Read-only here: returned by GET /me but not accepted by PATCH /me (the feature
+  // ships a later session). The Settings control for it stays disabled.
+  monthly_review_enabled: boolean;
 }
 
 // Partial profile update — mirrors the backend ProfileUpdate (all optional).
+// `monthly_review_enabled` is intentionally absent: it is read-only server-side.
 export interface ProfileUpdateInput {
   display_name?: string | null;
   preferred_language?: 'auto' | 'en' | 'el';
   onboarding_completed?: boolean;
+  renewal_lead_days?: number;
 }
 
 export function useMe(accessToken: string | undefined) {
