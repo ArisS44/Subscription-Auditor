@@ -126,6 +126,102 @@ def test_subscribe_rejects_non_http_endpoint(test_client, user_a):
 
 
 # --------------------------------------------------------------------------
+# Device list endpoint
+# --------------------------------------------------------------------------
+def test_list_devices_returns_callers_devices_without_keys(test_client, user_a):
+    _, token = user_a
+    test_client.post(f"{BASE}/subscribe", headers=_auth(token), json=_sub_body())
+    test_client.post(
+        f"{BASE}/subscribe",
+        headers=_auth(token),
+        json=_sub_body(endpoint="https://push.example.com/device-2", user_agent="Firefox on phone"),
+    )
+
+    r = test_client.get(f"{BASE}/subscriptions", headers=_auth(token))
+    assert r.status_code == 200
+    devices = r.json()
+    assert len(devices) == 2
+    assert {d["endpoint"] for d in devices} == {
+        "https://push.example.com/device-1",
+        "https://push.example.com/device-2",
+    }
+    for d in devices:
+        # Identifiable enough for Settings to label and revoke a device...
+        assert d["endpoint"] and d["id"] and d["created_at"]
+        assert "user_agent" in d
+        # ...but the encryption keys are absent, under every name they go by.
+        for forbidden in ("p256dh", "auth", "p256dh_key", "auth_key", "keys"):
+            assert forbidden not in d, f"{forbidden} must never reach this response"
+
+
+def test_list_devices_requires_auth(test_client):
+    assert test_client.get(f"{BASE}/subscriptions").status_code == 401
+
+
+def test_list_devices_is_empty_before_any_subscribe(test_client, user_a):
+    _, token = user_a
+    r = test_client.get(f"{BASE}/subscriptions", headers=_auth(token))
+    assert r.status_code == 200
+    assert r.json() == []  # an empty collection, not a 404
+
+
+def test_subscribe_list_revoke_round_trip(test_client, user_a):
+    """Revocation must be revocable in fact: after DELETE the row is gone from the
+    list, not merely flagged or muted."""
+    _, token = user_a
+    endpoint = "https://push.example.com/device-1"
+    assert (
+        test_client.post(
+            f"{BASE}/subscribe", headers=_auth(token), json=_sub_body(endpoint=endpoint)
+        ).status_code
+        == 201
+    )
+
+    listed = test_client.get(f"{BASE}/subscriptions", headers=_auth(token)).json()
+    assert [d["endpoint"] for d in listed] == [endpoint]
+
+    assert (
+        test_client.delete(
+            f"{BASE}/subscribe/{quote(endpoint, safe='')}", headers=_auth(token)
+        ).status_code
+        == 204
+    )
+
+    assert test_client.get(f"{BASE}/subscriptions", headers=_auth(token)).json() == []
+
+
+def test_list_devices_does_not_show_another_users_device(test_client, user_a, user_b):
+    """B's list must not contain A's device. The positive control comes first: A's
+    own list proves the row exists, so B's empty list is a real denial rather than
+    a query that matched nothing."""
+    _, token_a = user_a
+    _, token_b = user_b
+    test_client.post(f"{BASE}/subscribe", headers=_auth(token_a), json=_sub_body())
+
+    # Positive control — the row genuinely exists and is visible to its owner.
+    a_devices = test_client.get(f"{BASE}/subscriptions", headers=_auth(token_a)).json()
+    assert [d["endpoint"] for d in a_devices] == ["https://push.example.com/device-1"]
+
+    b_devices = test_client.get(f"{BASE}/subscriptions", headers=_auth(token_b)).json()
+    assert b_devices == []
+    assert "https://push.example.com/device-1" not in [d["endpoint"] for d in b_devices]
+
+    # A's row survived B's read.
+    assert len(test_client.get(f"{BASE}/subscriptions", headers=_auth(token_a)).json()) == 1
+
+
+def test_list_response_model_has_no_key_fields() -> None:
+    """Structural, not behavioural: even if the query were changed to select the
+    keys, the response model has no field able to carry them. Guards the invariant
+    at the type level rather than relying on a request-shaped test."""
+    from app.models.push import PushSubscriptionResponse
+
+    fields = set(PushSubscriptionResponse.model_fields)
+    assert fields.isdisjoint({"p256dh", "auth", "p256dh_key", "auth_key", "keys"})
+    assert fields == {"id", "endpoint", "user_agent", "created_at"}
+
+
+# --------------------------------------------------------------------------
 # Cross-user isolation (with positive control)
 # --------------------------------------------------------------------------
 async def test_cross_user_cannot_see_or_delete(db_pool, user_a, user_b):

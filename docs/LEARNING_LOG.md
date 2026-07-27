@@ -819,3 +819,14 @@ is the security boundary for two callers at once, and a field's validation has t
 untrusted one. Concretely: the range bound is what stops a model-produced `reminder_lead_days: 999` from
 reaching the database. Look here: the `ToolSpec` registrations at the bottom of
 `backend/app/services/tools.py`.
+
+### A response model is a structural guarantee, not a filter you have to remember
+The push device list must never carry `p256dh`/`auth`. Two independent things prevent it: the read query
+selects `_RESPONSE_COLUMNS`, which omits the key columns, and `PushSubscriptionResponse` has no field able to
+hold them — Pydantic ignores unknown keyword arguments, so extra columns are dropped rather than passed
+through. Verified by sabotage in both directions, which is the only way to know which wall is load-bearing:
+widening the *query* to select both keys left every test green (the model blocked them on its own), while
+widening the *model* turned two tests red. The lesson is that the model is the real boundary and the column
+list is defence in depth, so the durable test asserts the model's field set exactly rather than probing one
+response body. Look here: `_RESPONSE_COLUMNS` in `backend/app/db/push.py` and
+`test_list_response_model_has_no_key_fields` in `backend/tests/test_push.py`.
