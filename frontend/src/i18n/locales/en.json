@@ -12,12 +12,20 @@
       "unsupportedHint": "This browser can't show push notifications.",
       "error": "Couldn't enable notifications. Please try again.",
       "checking": "Checking your subscriptions…",
+      "checkingDevice": "Checking this device…",
       "needsSubscription": "Add a subscription first — a reminder needs something to remind you about.",
       "ios": {
         "title": "Add to your Home Screen to turn on notifications",
         "step1": "Tap the Share button",
         "step2": "Choose “Add to Home Screen”"
       }
+    },
+    "leadTime": {
+      "inherit": "Default ({{days}})",
+      "days": "{{days}}",
+      "custom": "Custom",
+      "customLabel": "Custom lead time in days",
+      "daysSuffix": "days before renewal"
     }
   },
   "landing": {
@@ -227,7 +235,9 @@
         "notes": "Notes",
         "manageUrl": "Manage / cancel link",
         "manageUrlPlaceholder": "https://provider.com/account/billing",
-        "manageUrlHint": "Optional. A link to where you manage or cancel this subscription."
+        "manageUrlHint": "Optional. A link to where you manage or cancel this subscription.",
+        "reminderLead": "Reminder lead time",
+        "reminderLeadHint": "When to remind you before this renews. “Default” uses your account setting."
       },
       "categoryNone": "Uncategorized",
       "datePlaceholder": "Pick a date",
@@ -246,6 +256,7 @@
         "dateInvalid": "Enter a valid date.",
         "notesTooLong": "Notes are too long.",
         "manageUrlInvalid": "Enter a valid http(s) URL.",
+        "leadTimeInvalid": "Enter a whole number of days from 0 to 30.",
         "manageUrlTooLong": "This link is too long."
       }
     },
@@ -362,7 +373,18 @@
       "weeklySummary": "Weekly summary",
       "weeklySummaryHint": "A weekly digest of your spending.",
       "monthlyInsights": "Monthly insights",
-      "monthlyInsightsHint": "AI-written insights once a month."
+      "monthlyInsightsHint": "AI-written insights once a month.",
+      "deviceTitle": "Reminders on this device",
+      "leadTitle": "Remind me before a renewal",
+      "leadHint": "How many days ahead to send the reminder. Subscriptions without their own setting use this.",
+      "devicesTitle": "Your devices",
+      "devicesLoading": "Loading devices…",
+      "devicesError": "Couldn't load your devices.",
+      "devicesEmpty": "No devices yet. Enable notifications above to register this one.",
+      "deviceUnknown": "Unknown device",
+      "deviceAdded": "Added {{date}}",
+      "deviceRevoke": "Remove device",
+      "comingSoonTitle": "More reminders"
     },
     "credits": {
       "apollon": "Apollon mark: “apollo” by Maxicons from the",

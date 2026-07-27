@@ -27,6 +27,8 @@ import {
   useUpdateSubscription,
   type Subscription,
 } from '@/hooks/useSubscriptions';
+import { useMe } from '@/hooks/useMe';
+import { LeadTimeChips } from '@/features/notifications/LeadTimeChips';
 import {
   BILLING_CYCLES,
   CATEGORIES,
@@ -54,6 +56,7 @@ function toFormValues(subscription?: Subscription): SubscriptionFormValues {
       next_renewal_date: '',
       notes: '',
       manage_url: '',
+      reminder_lead_days: null,
     };
   }
   return {
@@ -66,6 +69,7 @@ function toFormValues(subscription?: Subscription): SubscriptionFormValues {
     next_renewal_date: subscription.next_renewal_date ?? '',
     notes: subscription.notes ?? '',
     manage_url: subscription.manage_url ?? '',
+    reminder_lead_days: subscription.reminder_lead_days,
   };
 }
 
@@ -88,6 +92,8 @@ export function SubscriptionFormDialog({
   const create = useCreateSubscription(accessToken);
   const update = useUpdateSubscription(accessToken);
   const pending = create.isPending || update.isPending;
+  // The user's default lead time, shown as the "Inherit (N days)" option.
+  const { data: profile } = useMe(accessToken);
 
   const schema = useMemo(() => createSubscriptionSchema(t), [t]);
   const {
@@ -290,6 +296,30 @@ export function SubscriptionFormDialog({
               <FieldError errors={[errors.notes]} />
             </Field>
 
+            <Controller
+              control={control}
+              name="reminder_lead_days"
+              render={({ field }) => (
+                <Field>
+                  <FieldLabel>{t('subscriptions.form.fields.reminderLead')}</FieldLabel>
+                  <LeadTimeChips
+                    value={field.value}
+                    onChange={field.onChange}
+                    allowInherit
+                    inheritDays={profile?.renewal_lead_days}
+                    label={t('subscriptions.form.fields.reminderLead')}
+                    idPrefix="sub-lead"
+                  />
+                  <FieldDescription>
+                    {t('subscriptions.form.fields.reminderLeadHint')}
+                  </FieldDescription>
+                  <FieldError errors={[errors.reminder_lead_days]} />
+                </Field>
+              )}
+            />
+
+            {/* The manage/cancel link is deliberately last — the reminder field
+                above it is more important and stays visible without scrolling. */}
             <Field>
               <FieldLabel htmlFor="sub-manage-url">
                 {t('subscriptions.form.fields.manageUrl')}

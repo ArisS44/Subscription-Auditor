@@ -77,6 +77,14 @@ export function createSubscriptionSchema(t: TFunction) {
         .max(MANAGE_URL_MAX, e('manageUrlTooLong'))
         .refine(isHttpUrl, e('manageUrlInvalid')),
     ]),
+    // Reminder lead time in days. `null` is a real state: inherit the user's
+    // default. A number overrides it (0–30). UX-only bounds; backend re-validates.
+    reminder_lead_days: z
+      .number()
+      .int(e('leadTimeInvalid'))
+      .min(0, e('leadTimeInvalid'))
+      .max(30, e('leadTimeInvalid'))
+      .nullable(),
   });
 }
 
@@ -99,5 +107,8 @@ export function formValuesToPayload(values: SubscriptionFormValues): Subscriptio
     // Empty → null so an existing link can be cleared; the backend treats null as
     // "no link".
     manage_url: values.manage_url.trim() ? values.manage_url.trim() : null,
+    // Passed through as-is: null means "inherit the user default", a number
+    // overrides it.
+    reminder_lead_days: values.reminder_lead_days,
   };
 }

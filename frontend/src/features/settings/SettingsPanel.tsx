@@ -7,9 +7,8 @@ import { useAuth } from '@/features/auth/auth-context';
 import { useMe, useUpdateProfile } from '@/hooks/useMe';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { NotificationsCard } from './NotificationsCard';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import {
   Select,
@@ -30,24 +29,6 @@ const languageLabelKey: Record<PreferredLanguage, string> = {
   en: 'settings.languageEn',
   el: 'settings.languageEl',
 };
-
-// Notification preferences shown but inert — the backend arrives in a later
-// session. Rendered as disabled switches so they read as "not yet active",
-// not broken.
-const NOTIFICATION_PREFS = [
-  {
-    labelKey: 'settings.notifications.renewalReminders',
-    hintKey: 'settings.notifications.renewalRemindersHint',
-  },
-  {
-    labelKey: 'settings.notifications.weeklySummary',
-    hintKey: 'settings.notifications.weeklySummaryHint',
-  },
-  {
-    labelKey: 'settings.notifications.monthlyInsights',
-    hintKey: 'settings.notifications.monthlyInsightsHint',
-  },
-];
 
 function toFormValues(
   displayName: string | null | undefined,
@@ -182,24 +163,7 @@ export function SettingsPanel() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex-row items-center gap-3 space-y-0">
-          <CardTitle>{t('settings.notifications.title')}</CardTitle>
-          <Badge variant="outline">{t('dashboard.comingSoon.badge')}</Badge>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">{t('settings.notifications.description')}</p>
-          {NOTIFICATION_PREFS.map(({ labelKey, hintKey }) => (
-            <div key={labelKey} className="flex items-center justify-between gap-4">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">{t(labelKey)}</span>
-                <span className="text-sm text-muted-foreground">{t(hintKey)}</span>
-              </div>
-              <Switch disabled aria-label={t(labelKey)} />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <NotificationsCard />
 
       {/* Attribution required by the CC BY 3.0 licence of the Apollon mark. */}
       <p className="text-xs text-muted-foreground">

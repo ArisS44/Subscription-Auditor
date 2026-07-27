@@ -13,6 +13,8 @@ function completedProfile(): Profile {
     display_name: null,
     preferred_language: 'en',
     onboarding_completed: true,
+    renewal_lead_days: 3,
+    monthly_review_enabled: false,
   };
 }
 

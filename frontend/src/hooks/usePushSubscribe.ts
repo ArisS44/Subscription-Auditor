@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { urlBase64ToUint8Array } from '@/features/notifications/push-support';
 
@@ -23,7 +23,13 @@ async function ensureRegistration(): Promise<ServiceWorkerRegistration> {
  *  runs only on grant. Re-running is safe: an existing browser subscription is
  *  reused, and the backend upserts on `(user_id, endpoint)`. */
 export function usePushSubscribe(accessToken: string | undefined) {
+  const queryClient = useQueryClient();
   return useMutation<PushSubscribeResult, Error, void>({
+    onSuccess: () => {
+      // Refresh the device list so the newly registered device appears and the
+      // opt-in's "registered" state resolves without a reload.
+      void queryClient.invalidateQueries({ queryKey: ['push-devices'] });
+    },
     mutationFn: async () => {
       if (!VAPID_PUBLIC_KEY) {
         throw new Error('Missing VITE_VAPID_PUBLIC_KEY');
