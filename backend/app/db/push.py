@@ -8,6 +8,13 @@ import asyncpg
 # returned by the read path.
 _RESPONSE_COLUMNS = "id, endpoint, user_agent, created_at"
 
+# Hard cap on rows returned by the read path. A user has a handful of devices, but
+# nothing in the schema *bounds* that — each distinct browser profile is another
+# row — so the query is capped rather than left open-ended, satisfying the
+# bounded-work-per-request rule. Well above any realistic device count, so it is a
+# resource guard rather than pagination the client has to page through.
+_MAX_DEVICES_RETURNED = 100
+
 
 async def upsert_subscription(
     conn: asyncpg.Connection,
@@ -55,9 +62,14 @@ async def list_subscriptions(conn: asyncpg.Connection) -> list[asyncpg.Record]:
 
 async def list_subscriptions_for_response(conn: asyncpg.Connection) -> list[asyncpg.Record]:
     """The caller's registrations without the encryption keys, for returning to
-    the client that manages them."""
+    the client that manages them. `p256dh_key`/`auth_key` are not in
+    `_RESPONSE_COLUMNS`, so they cannot reach this result set at all — the read
+    path never selects them. A secondary `id` sort makes the order deterministic
+    when two devices share a `created_at`."""
     return await conn.fetch(
-        f"SELECT {_RESPONSE_COLUMNS} FROM push_subscriptions ORDER BY created_at ASC"
+        f"SELECT {_RESPONSE_COLUMNS} FROM push_subscriptions "
+        "ORDER BY created_at ASC, id ASC LIMIT $1",
+        _MAX_DEVICES_RETURNED,
     )
 
 

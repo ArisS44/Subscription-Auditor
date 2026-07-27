@@ -32,6 +32,23 @@ async def subscribe(payload: PushSubscriptionCreate, claims: Claims) -> PushSubs
     return PushSubscriptionResponse(**row)
 
 
+@router.get("/subscriptions", response_model=list[PushSubscriptionResponse])
+async def list_devices(claims: Claims) -> list[PushSubscriptionResponse]:
+    """The caller's registered devices, so Settings can list and revoke them.
+
+    A collection noun rather than `GET /subscribe`: the POST path is verb-shaped
+    (an action), and a GET on it would read as fetching that action while actually
+    returning a list.
+
+    `list_for_user` goes through `rls_connection`, so Postgres — not a WHERE clause
+    here — is what limits the result to the caller's own rows. The encryption keys
+    are structurally absent: the query does not select them and
+    `PushSubscriptionResponse` has no field to carry them.
+    """
+    rows = await svc.list_for_user(claims)
+    return [PushSubscriptionResponse(**row) for row in rows]
+
+
 @router.delete("/subscribe/{endpoint:path}", status_code=status.HTTP_204_NO_CONTENT)
 async def unsubscribe(endpoint: str, claims: Claims) -> None:
     # The endpoint is a URL captured as a path parameter (`:path` so its slashes
