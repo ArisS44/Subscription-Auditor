@@ -515,6 +515,44 @@ to the Key Vault.
 
 ---
 
+## 8. Scheduled reminder job (GitHub Actions)
+
+The daily reminder job is triggered by an external scheduler, not an in-process one: the app is
+scale-to-zero, so there is no always-on process to run a cron, and running one across horizontally
+scaled replicas would fire the job N times. `.github/workflows/reminders.yml` is that scheduler — it
+`POST`s to `/api/v1/jobs/run-due` on the deployed backend, authenticating with the shared job token.
+
+**Triggers — and what is deliberately absent.** The workflow runs on exactly two events: a daily
+`schedule` cron, and `workflow_dispatch` (the manual "Run workflow" button). It does **not** run on
+`push` or `pull_request` — the opposite of `backend.yml`/`frontend.yml` — because the job sends real
+Web Push notifications, and firing it on every code change would spam users.
+
+**Schedule and timezone.** The cron is `0 6 * * *` — 06:00 UTC daily. GitHub Actions cron is always
+UTC and does not observe daylight saving. Athens is UTC+2 (EET) in winter and UTC+3 (EEST) in summer,
+so this fixed UTC hour lands at **08:00 local in winter, 09:00 local in summer**. That one-hour
+seasonal drift is expected, not a bug; both are sensible morning delivery times. GitHub also delays
+scheduled runs under load — they are best-effort, not precise — which is fine for a once-a-day
+reminder. To shift the delivery time, change the UTC hour and re-derive the local window.
+
+**How to trigger a run manually** (the primary operational tool — for the Stage 3 live check, and for
+future debugging):
+
+1. GitHub repo → **Actions** tab → **Reminder Job** workflow (left sidebar).
+2. **Run workflow** button (top right) → pick the branch → **Run workflow**.
+3. Open the run; the step logs the HTTP status and the counts-only JSON summary
+   (`due`/`sent`/`skipped_already_sent`/`pruned`/`failed`). A non-2xx status fails the run (red).
+
+**Secrets.** The workflow reads `PROD_JOB_TOKEN` from GitHub Actions secrets (provisioned in Task 1.3,
+mirrored from the Key Vault `job-token` the backend verifies). The token is passed as a step env var,
+never inlined; the workflow uses no `curl -v` or `set -x`, so the header cannot reach the logs.
+
+**Live end-to-end verification is a Stage 3 step.** The `run-due` endpoint is not in production until
+the backend deploy (Task 3.1). Until then a manual dispatch would 404. After the deploy, run a manual
+dispatch and confirm a green run with a valid counts summary — that is the real verification, since the
+scheduled path cannot be exercised locally.
+
+---
+
 ## Reference values for later tasks
 
 Record these — Task 4.2 (CI/CD) and later frontend deploy steps need them:
