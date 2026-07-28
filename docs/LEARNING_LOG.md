@@ -830,3 +830,25 @@ widening the *model* turned two tests red. The lesson is that the model is the r
 list is defence in depth, so the durable test asserts the model's field set exactly rather than probing one
 response body. Look here: `_RESPONSE_COLUMNS` in `backend/app/db/push.py` and
 `test_list_response_model_has_no_key_fields` in `backend/tests/test_push.py`.
+
+### "Unambiguous" does not mean to a model what it means to you
+The chat agent was silently applying an edit meant for "Pokemon golf" to an existing "Pokemon go". The first
+fix told it to act only when the user's words "unambiguously identify exactly one" subscription — and the model
+kept doing it, because with only one similar name in the account there genuinely *is* no ambiguity from its
+point of view: one candidate, one choice. The word invited the wrong inference in exactly the case that needed
+catching. What worked was naming the failure mode directly — "ask which one they mean, EVEN IF exactly one of
+their subscriptions looks similar. Being the only similar name does not make it the intended one." The general
+lesson for prompt rules: an abstract criterion ("unambiguous", "clear", "obvious") gets evaluated by the model's
+judgement, which is the thing that was wrong to begin with. State the concrete case you want excluded. Note also
+that the same first-draft wording *was* obeyed in Greek — a rule can hold in one language and fail in another,
+so live checks have to cover both. Look here: the "Targeting the right subscription" paragraph in
+`backend/app/services/prompts.py`.
+
+### A live check needs its own state reset, or one failure poisons the next case
+The first live run left a corrupted baseline: the English near-miss scenario wrongly changed Pokemon go's price
+to €30, and because the reset helper only restored Netflix, the Greek scenario then ran against €30 and reported
+a meaningless before/after. The verdict happened to still be right, but only by luck. Any live-model harness
+that mutates rows must restore *every* row it touches between cases, for the same reason the pytest fixtures
+reset per test rather than per session. Verdicts should also come from the database and the tool list, never
+from the model's prose — it will describe a successful edit whether or not one happened. Look here:
+`_reset` in the Task 2.11 live-check script (job scratch, not committed).

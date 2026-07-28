@@ -41,6 +41,59 @@ def test_ask_dont_invent_rule_present(prompt: str) -> None:
 
 
 @_prompt
+def test_lead_time_is_never_invented(prompt: str) -> None:
+    """A reminder lead time is a user-chosen value like a price or a date, not a
+    classification like category — so a missing one is asked for, never guessed.
+    Guards the live defect where the model fabricated "5 days" unprompted."""
+    low = prompt.lower()
+    assert "reminder lead times" in low
+    assert "how many days they want" in low
+    # A vague comparative must not be read as implying a number.
+    assert "never pick a number yourself" in low
+    assert '"earlier"' in low
+
+
+@_prompt
+def test_ambiguous_subscription_match_requires_confirmation(prompt: str) -> None:
+    """Guards the live defect where "Pokemon golf" was silently applied to an
+    existing "Pokemon go". The rule is about *which* subscription an action lands
+    on, so it must also say it applies to non-destructive edits — otherwise it
+    collapses into the destructive-confirmation rule and the silent wrong-target
+    edit stays possible."""
+    low = prompt.lower()
+    # Short fragments only — the prompt hard-wraps at ~76 cols, so anything
+    # longer risks straddling a line break and never matching.
+    assert "identify exactly one of them" in low
+    assert "ask which one they mean" in low
+    # The load-bearing clause: one similar candidate is NOT a match. Without this
+    # the model reads "only one plausible option" as unambiguous and edits it,
+    # which is precisely how the live check failed before this wording.
+    assert "even if exactly one of their subscriptions looks similar" in low
+    assert "being the only similar name does not make it the intended one" in low
+    assert "non-destructive edits too" in low
+
+
+@_prompt
+def test_ambiguous_match_rule_does_not_gate_every_edit(prompt: str) -> None:
+    """The rule must not be read as "confirm before every edit" — an obvious,
+    exact reference still acts directly. Without this the fix would trade a wrong-
+    target edit for a needless confirmation on every ordinary one."""
+    low = prompt.lower()
+    assert "matches exactly one subscription, just act" in low
+    assert "not a licence to ask for" in low
+
+
+@_prompt
+def test_destructive_confirmation_rule_still_distinct(prompt: str) -> None:
+    """The pre-existing destructive-action discipline must survive unchanged and
+    stay separate from the new targeting rule (whether to act vs what to act on)."""
+    low = prompt.lower()
+    assert "confirmation discipline for destructive actions" in low
+    assert "clear affirmative" in low
+    assert "separate from the confirmation you must get before destructive" in low
+
+
+@_prompt
 def test_category_is_classification_not_fabrication(prompt: str) -> None:
     """The corrected rule: category is a classification the model SHOULD assign to
     a recognisable service, distinct from the price/date it must never invent.
