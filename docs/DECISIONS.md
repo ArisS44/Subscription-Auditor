@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-07-28 — Chat wrong-target/fabrication protection is prompt-level only (structural defence deferred)
+
+**Decision:** The chat agent's protections against fabricating a value the user did not give and against
+editing the wrong subscription on a fuzzy name match are enforced **by prompt instruction only** (Task
+2.11), not by code. A structural defence — pushing name-match disambiguation into the tool boundary so a
+wrong-target write is *rejected* rather than merely discouraged — is **deferred**, not attempted this
+session.
+
+**Why:** the prompt fix resolved both live defects and was verified 12/12 across both languages, which is
+adequate for the current single-user, low-stakes surface (a wrong-target edit is non-destructive and
+user-visible). The structural fix is genuinely harder than it looks: the model calls `update_subscription`
+with a `subscription_id` it already resolved from a prior list/query call, so the backend receives a valid,
+owned ID with no name attached — there is nothing at the tool boundary to compare against unless the tool
+contract is changed to also carry the user-stated name and the resolved row's name for verification. That
+is a real design change, speculative ahead of a concrete need, and was out of Task 2.11's scope.
+
+**How to apply:** treat this as a known limitation, not a guarantee (see the CLAUDE.md Rule added the same
+day: never state a prompt-level behavioural guarantee as if it were structural). If a future session raises
+the stakes on chat writes — multiple users, destructive automation, or money movement — the structural
+shape to build is: have the write tools accept the user-stated name alongside the ID and reject or
+query-back when it does not match the stored name, so the wrong-target guarantee stops depending on prompt
+wording. Until then, any new chat prompt-behaviour rule must be live-verified in both `en` and `el`.
+
+---
+
 ## 2026-07-26 — iOS Web Push ships code-complete but on-device-unverified; frontend gets a strict CSP this session
 
 **iOS verification — accepted unverified.** The Web Push opt-in, service worker, and PWA manifest are
