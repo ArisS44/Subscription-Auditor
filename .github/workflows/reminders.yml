@@ -1,0 +1,70 @@
+name: Reminder Job
+
+# Triggers the daily reminder job on the deployed backend. Unlike backend.yml /
+# frontend.yml, this workflow deliberately does NOT run on push or pull_request:
+# the job sends real Web Push notifications, so it must fire only on its schedule
+# or when a human explicitly asks for it. The two triggers below are the whole
+# set.
+on:
+  schedule:
+    # 06:00 UTC daily. Target is ~08:00 in Athens: Athens is UTC+2 (EET) in
+    # winter and UTC+3 (EEST) in summer, so this fixed UTC hour lands at 08:00
+    # local in winter and 09:00 local in summer. GitHub Actions cron is always
+    # UTC and does NOT observe daylight saving, so that one-hour seasonal drift
+    # is expected and is not a bug. GitHub also delays scheduled runs under load
+    # (they are best-effort, not precise) — acceptable for a once-a-day reminder.
+    - cron: "0 6 * * *"
+  workflow_dispatch: # manual "Run workflow" button — the primary tool for
+    # Stage 3 verification and ad-hoc debugging.
+
+# Least privilege: this workflow only calls an external HTTP endpoint. It never
+# reads or writes the repo, so it needs no token scopes at all.
+permissions: {}
+
+jobs:
+  run-due-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminder job
+        env:
+          # Referenced only here, as an env var — never interpolated inline into
+          # the command line. The value is the job token provisioned in Key Vault
+          # (which the backend verifies) and mirrored into this GitHub secret.
+          JOB_TOKEN: ${{ secrets.PROD_JOB_TOKEN }}
+          # Full prod URL confirmed against the live Container App ingress FQDN
+          # and infra/azure/README.md.
+          URL: "https://ca-subscription-auditor-backend.nicebush-826aba8d.germanywestcentral.azurecontainerapps.io/api/v1/jobs/run-due"
+        run: |
+          set -euo pipefail
+
+          # Notes on why this is written the way it is:
+          #  - No `curl -v` and no `set -x`: either would print the X-Job-Token
+          #    header into the logs. GitHub also masks registered secret values,
+          #    but we do not rely on that alone.
+          #  - The Container App is scale-to-zero (minReplicas: 0), so the first
+          #    request wakes it and can be slow. A generous --max-time plus a few
+          #    retries rides out the cold start instead of failing on wake-up
+          #    latency. --retry-all-errors also retries transient 5xx.
+          #  - Status is checked explicitly so a non-2xx or unreachable endpoint
+          #    fails the step (red run) rather than passing silently.
+          http_code=$(curl --silent --show-error \
+            --request POST \
+            --max-time 180 \
+            --retry 3 --retry-delay 15 --retry-all-errors \
+            --header "X-Job-Token: ${JOB_TOKEN}" \
+            --output response_body.json \
+            --write-out '%{http_code}' \
+            "${URL}")
+
+          echo "HTTP status: ${http_code}"
+
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            echo "::error::Reminder job failed — endpoint returned HTTP ${http_code}"
+            # The response body is a counts-only summary (or a generic error
+            # string), never user content, so it is safe to surface for debugging.
+            cat response_body.json || true
+            exit 1
+          fi
+
+          echo "Reminder job completed. Summary:"
+          cat response_body.json
