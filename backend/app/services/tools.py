@@ -23,6 +23,7 @@ Security posture:
 
 import json
 import math
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date
@@ -77,6 +78,12 @@ class ToolSpec:
     description: str
     args_model: type[BaseModel]
     handler: Callable[[dict, BaseModel], Awaitable[dict]]
+
+
+class ToolRefusedError(Exception):
+    """A tool-boundary check rejected an otherwise well-formed call. The message
+    is written for the model to read and act on, and `dispatch` turns it into a
+    clean `ToolResult.failure` — never a partial execution, never a stack trace."""
 
 
 _REGISTRY: dict[str, ToolSpec] = {}
@@ -255,6 +262,8 @@ async def dispatch(name: str, arguments: dict | str | None, claims: dict) -> Too
 
     try:
         data = await spec.handler(claims, args)
+    except ToolRefusedError as exc:
+        return ToolResult.failure(str(exc))
     except (SubscriptionNotFoundError, ProfileNotFoundError):
         # Includes the RLS case: another user's row is invisible, so it reads as
         # not-found rather than forbidden — existence is never leaked.
@@ -345,24 +354,100 @@ class RenderTableArgs(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Wrong-target protection for the write tools.
+#
+# The identity prompt tells the model to ask which subscription the user means
+# rather than acting on a near-miss name. That instruction reduced the failure a
+# long way but could not remove it: a rule in a prompt is a probability, and the
+# model still held tools that accepted any id it chose. Observed live, twice, in
+# both directions — "Pokemon golf" silently repriced "Pokemon go" in English
+# before the wording was tightened, and again in Greek afterwards.
+#
+# So the guarantee lives here instead. A write tool must state WHICH NAME it
+# believes it is acting on, and that claim is checked against the row the id
+# actually points at before anything is written. A mismatch returns a refusal
+# the model can act on, never a write.
+#
+# Matching is by word, deliberately, because both failure directions matter:
+#   stated "Netflix"       vs stored "Netflix Premium"  -> allowed (user was brief)
+#   stated "Pokemon golf"  vs stored "Pokemon go"       -> refused ("golf" is not
+#                                                          a word of the stored name)
+#   stated "Netflix Premium" vs stored "Netflix"        -> refused (extra words mean
+#                                                          a different service)
+# Every word the user used must exist in the stored name; extra words in the
+# stored name are fine. A substring test would be wrong here — "pokemon go" is a
+# substring of "pokemon golf" and would let the exact observed bug straight
+# through.
+#
+# Honest limit: this stops the model writing to a row whose name contradicts its
+# own stated target. It cannot stop a model that asserts a different name on a
+# retry, which is why the prompt rule stays and the refusal says not to retry.
+# ---------------------------------------------------------------------------
+_WORD_SPLIT_RE = re.compile(r"[^\w]+", re.UNICODE)
+
+
+def _name_words(value: str) -> set[str]:
+    """Case- and punctuation-insensitive word set. `casefold` (not `lower`) so
+    Greek names compare correctly, and `\\w` keeps non-ASCII letters."""
+    return {word for word in _WORD_SPLIT_RE.split(value.casefold()) if word}
+
+
+def _target_name_matches(stated: str, stored: str) -> bool:
+    stated_words, stored_words = _name_words(stated), _name_words(stored)
+    if not stated_words or not stored_words:
+        return False
+    return stated_words <= stored_words
+
+
+async def _require_matching_target(claims: dict, subscription_id: UUID, stated_name: str) -> dict:
+    """Load the target row and refuse unless the model's stated name matches it.
+    Returns the row so callers need not fetch it twice.
+
+    A row belonging to another user is invisible under RLS and surfaces as
+    not-found, so this never reveals whether someone else's id exists."""
+    row = await sub_svc.get_subscription(claims, str(subscription_id))
+    if not _target_name_matches(stated_name, row["name"]):
+        raise ToolRefusedError(
+            f"Refused: you gave subscription_name={stated_name!r}, but that id belongs to "
+            f"the subscription named {row['name']!r}. Those are not the same thing, so this "
+            "action was NOT performed. Do not retry with a different name or id. Ask the "
+            "user which of their subscriptions they mean, and wait for their answer."
+        )
+    return row
+
+
+# ---------------------------------------------------------------------------
 # Argument models for the service-backed tools (those not 1:1 with an existing
 # model). add_subscription reuses SubscriptionCreate and update_user_settings
 # reuses ProfileUpdate directly.
 # ---------------------------------------------------------------------------
+#: Shared description for the target-name field on every write tool. Phrased for
+#: the model, since this is the field the wrong-target check is built on.
+_TARGET_NAME_DESC = (
+    "The name of the subscription you are acting on, as it appears in the user's "
+    "own list of subscriptions. This is checked against the row subscription_id "
+    "points at, and the action is refused if they disagree."
+)
+TargetName = Annotated[str, Field(min_length=1, max_length=200, description=_TARGET_NAME_DESC)]
+
+
 class UpdateSubscriptionArgs(SubscriptionUpdate):
     """Partial subscription update plus the id to target. Inherits every optional
     field from SubscriptionUpdate so the model can send only what changes."""
 
     subscription_id: UUID
+    subscription_name: TargetName
 
 
 class CancelSubscriptionArgs(BaseModel):
     subscription_id: UUID
+    subscription_name: TargetName
     cancellation_date: date | None = None
 
 
 class DeleteSubscriptionArgs(BaseModel):
     subscription_id: UUID
+    subscription_name: TargetName
 
 
 class QuerySubscriptionsArgs(BaseModel):
@@ -397,12 +482,16 @@ async def _add_subscription(claims: dict, args: SubscriptionCreate) -> dict:
 
 
 async def _update_subscription(claims: dict, args: UpdateSubscriptionArgs) -> dict:
-    changes = SubscriptionUpdate(**args.model_dump(exclude={"subscription_id"}, exclude_unset=True))
+    await _require_matching_target(claims, args.subscription_id, args.subscription_name)
+    changes = SubscriptionUpdate(
+        **args.model_dump(exclude={"subscription_id", "subscription_name"}, exclude_unset=True)
+    )
     row = await sub_svc.update_subscription(claims, str(args.subscription_id), changes)
     return SubscriptionResponse(**row).model_dump(mode="json")
 
 
 async def _cancel_subscription(claims: dict, args: CancelSubscriptionArgs) -> dict:
+    await _require_matching_target(claims, args.subscription_id, args.subscription_name)
     row = await sub_svc.cancel_subscription(
         claims, str(args.subscription_id), args.cancellation_date
     )
@@ -410,6 +499,7 @@ async def _cancel_subscription(claims: dict, args: CancelSubscriptionArgs) -> di
 
 
 async def _delete_subscription(claims: dict, args: DeleteSubscriptionArgs) -> dict:
+    await _require_matching_target(claims, args.subscription_id, args.subscription_name)
     await sub_svc.delete_subscription(claims, str(args.subscription_id))
     return {"deleted": True, "subscription_id": str(args.subscription_id)}
 
@@ -474,8 +564,10 @@ def _register_builtin_tools() -> None:
     register(
         ToolSpec(
             "update_subscription",
-            "Update fields of one of the user's existing subscriptions by id. Only "
-            "the fields provided are changed.",
+            "Update fields of one of the user's existing subscriptions. Only the fields "
+            "provided are changed. You must pass both subscription_id and "
+            "subscription_name for the SAME subscription; if they disagree the call is "
+            "refused and nothing is changed.",
             UpdateSubscriptionArgs,
             _update_subscription,
         )
@@ -484,7 +576,9 @@ def _register_builtin_tools() -> None:
         ToolSpec(
             "mark_subscription_cancelled",
             "Mark one of the user's subscriptions as cancelled (soft cancel, row "
-            "retained). Confirm with the user before calling.",
+            "retained). Confirm with the user before calling. You must pass both "
+            "subscription_id and subscription_name for the SAME subscription; if they "
+            "disagree the call is refused and nothing is changed.",
             CancelSubscriptionArgs,
             _cancel_subscription,
         )
@@ -492,8 +586,10 @@ def _register_builtin_tools() -> None:
     register(
         ToolSpec(
             "delete_subscription",
-            "Permanently delete one of the user's subscriptions by id. Confirm with "
-            "the user before calling.",
+            "Permanently delete one of the user's subscriptions. Confirm with the user "
+            "before calling. You must pass both subscription_id and subscription_name for "
+            "the SAME subscription; if they disagree the call is refused and nothing is "
+            "deleted.",
             DeleteSubscriptionArgs,
             _delete_subscription,
         )
@@ -548,7 +644,10 @@ def _register_builtin_tools() -> None:
         ToolSpec(
             "render_chart",
             "Package already-fetched analytics numbers into a chart for the user. "
-            "Use only data returned by get_analytics in this conversation.",
+            "You MUST call get_analytics in this same reply before calling this — a "
+            "result from an earlier reply does not count and the call will be "
+            "refused. Do not also write the same figures out as text; the chart is "
+            "the presentation.",
             RenderChartArgs,
             _render_chart,
         )
@@ -556,8 +655,11 @@ def _register_builtin_tools() -> None:
     register(
         ToolSpec(
             "render_table",
-            "Package already-fetched data into a table for the user. Use only data "
-            "returned by a tool in this conversation.",
+            "Package already-fetched data into a table for the user. You MUST call "
+            "get_analytics in this same reply before calling this, even when the rows "
+            "come from another tool — a result from an earlier reply does not count "
+            "and the call will be refused. Do not also write the same rows out as a "
+            "markdown table; this tool is the presentation.",
             RenderTableArgs,
             _render_table,
         )

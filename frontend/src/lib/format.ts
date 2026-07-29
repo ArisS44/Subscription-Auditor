@@ -9,14 +9,22 @@ export function formatCurrency(amount: number | string, currency: string, locale
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(amount));
 }
 
-/** Plain number, locale-grouped (e.g. `1,234.5` / `1.234,5`). For non-money
- *  numerics — table cells, axis ticks without a currency. Trims to at most one
- *  fraction digit so large tables stay scannable; pass `compact` for axis ticks
- *  (`1.2K`). */
+/** Plain number, locale-grouped (e.g. `1,234.56` / `1.234,56`). Used for cells
+ *  and values that carry no currency code of their own.
+ *
+ *  Keeps two fraction digits, because a chat table cell is very often money
+ *  without a currency field to prove it — `render_table` has no currency, so a
+ *  price lands here as a bare number. At one digit this rounded 7.99 to "8" and
+ *  silently misreported a subscription price, which is the one thing this app
+ *  must not do. `maximumFractionDigits` is a ceiling, not padding, so whole
+ *  numbers still render as `1,234` rather than `1,234.00`.
+ *
+ *  Compact axis ticks keep a single digit: they are deliberately approximate
+ *  (`1.2K`) and are read as scale, never as an amount. */
 export function formatNumber(value: number, locale: string, compact = false): string {
   return new Intl.NumberFormat(locale, {
     notation: compact ? 'compact' : 'standard',
-    maximumFractionDigits: 1,
+    maximumFractionDigits: compact ? 1 : 2,
   }).format(value);
 }
 

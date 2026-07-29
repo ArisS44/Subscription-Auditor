@@ -9,6 +9,7 @@ answer or the iteration cap → persist the final assistant message (with any
 grounded chart/table payload) → auto-title on the first message.
 """
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -54,6 +55,21 @@ def _assistant_tool_calls(tool_calls: list[llm.ToolCall]) -> list[dict]:
     ]
 
 
+async def _generate_title_safely(user_text: str, client: httpx.AsyncClient | None) -> str | None:
+    """Auto-title a conversation, swallowing any failure.
+
+    Runs as a background task alongside the turn, so it must never raise: an
+    unretrieved task exception would surface as an unrelated warning, and titling
+    is best-effort — a turn is not worth failing over a missing title."""
+    try:
+        return await llm.generate_title(user_text, client=client)
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 — titling is best-effort, never fail the turn
+        logger.warning("auto-title generation failed")
+        return None
+
+
 async def stream_turn(
     claims: dict,
     conversation_id: str,
@@ -74,14 +90,11 @@ async def stream_turn(
 
     # 2. Ownership + persist the user message + load the replay window + language.
     async with rls_connection(claims) as conn:
-        conv = await chat_db.get_conversation(conn, conversation_id)
-        if conv is None:
+        ctx = await chat_db.get_turn_context(conn, conversation_id, user_id)
+        if ctx is None:
             raise ConversationNotFoundError()
-        is_first_message = (await chat_db.count_messages(conn, conversation_id)) == 0
-        language = (
-            await conn.fetchval("SELECT preferred_language FROM profiles WHERE id = $1", user_id)
-            or "auto"
-        )
+        is_first_message = ctx["message_count"] == 0
+        language = ctx["preferred_language"] or "auto"
         await chat_db.insert_message(
             conn,
             conversation_id=conversation_id,
@@ -92,6 +105,20 @@ async def stream_turn(
         window = await chat_db.get_recent_messages(
             conn, conversation_id, limit=settings.chat_history_window
         )
+
+    # Auto-titling needs only the user's message, which is already known — so it
+    # runs concurrently with the turn instead of being a serial provider call
+    # tacked on at the end. It is awaited before the final persist below, so the
+    # observable event order is unchanged; what disappears is the wait.
+    #
+    # If the caller abandons this generator mid-stream (an SSE client disconnects),
+    # the task is neither awaited nor cancelled. That is deliberate and harmless:
+    # `_generate_title_safely` cannot raise, so there is no unretrieved exception,
+    # and it writes nothing itself — the title is persisted by this function or not
+    # at all. The cost is one already-issued model call whose result is discarded.
+    title_task: asyncio.Task[str | None] | None = None
+    if is_first_message:
+        title_task = asyncio.create_task(_generate_title_safely(user_text, client))
 
     history = [
         llm.Message(
@@ -194,10 +221,16 @@ async def stream_turn(
             logger.warning("token usage accounting failed")
 
     if stream_failed:
+        if title_task is not None:
+            title_task.cancel()  # nothing will consume it; don't leak a pending task
         yield {"type": "done"}
         return
 
-    # Persist the final assistant message (+ any grounded chart/table payload).
+    title = await title_task if title_task is not None else None
+
+    # Persist the final assistant message (+ any grounded chart/table payload), and
+    # the title in the same transaction. `update_conversation_title` bumps
+    # `updated_at` itself, so it stands in for the touch when a title was produced.
     async with rls_connection(claims) as conn:
         await chat_db.insert_message(
             conn,
@@ -207,20 +240,13 @@ async def stream_turn(
             content=final_text or None,
             structured_payload=last_render_payload,
         )
-        await chat_db.touch_conversation(conn, conversation_id)
+        if title:
+            await chat_db.update_conversation_title(conn, conversation_id, title)
+        else:
+            await chat_db.touch_conversation(conn, conversation_id)
     if last_render_payload is not None:
         yield {"type": "structured", "payload": last_render_payload}
-
-    # Auto-title on the conversation's first message.
-    if is_first_message:
-        title = None
-        try:
-            title = await llm.generate_title(user_text, client=client)
-        except Exception:  # noqa: BLE001 — titling is best-effort, never fail the turn
-            logger.warning("auto-title generation failed")
-        if title:
-            async with rls_connection(claims) as conn:
-                await chat_db.update_conversation_title(conn, conversation_id, title)
-            yield {"type": "title", "title": title}
+    if title:
+        yield {"type": "title", "title": title}
 
     yield {"type": "done"}
