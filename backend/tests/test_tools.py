@@ -357,15 +357,147 @@ async def test_tool_cannot_cross_user_boundary(db_pool, user_a, user_b):
     sub_id = created.content["id"]
 
     # B cannot delete or update A's subscription — invisible under RLS → not-found.
-    b_delete = await dispatch("delete_subscription", {"subscription_id": sub_id}, claims_b)
+    # B supplies the correct name, so the refusal is RLS doing the work and not the
+    # wrong-target name check standing in for it.
+    b_delete = await dispatch(
+        "delete_subscription",
+        {"subscription_id": sub_id, "subscription_name": "A only"},
+        claims_b,
+    )
     assert not b_delete.ok and "not found" in b_delete.content["error"]
 
     b_update = await dispatch(
-        "update_subscription", {"subscription_id": sub_id, "name": "hacked"}, claims_b
+        "update_subscription",
+        {"subscription_id": sub_id, "subscription_name": "A only", "name": "hacked"},
+        claims_b,
     )
-    assert not b_update.ok
+    assert not b_update.ok and "not found" in b_update.content["error"]
 
     # A's subscription is intact.
     a_view = await dispatch("query_subscriptions", {}, claims_a)
     names = [item["name"] for item in a_view.content["items"]]
     assert "A only" in names and "hacked" not in names
+
+
+# --------------------------------------------------------------------------
+# Wrong-target protection on the write tools.
+#
+# The prompt tells the model to ask which subscription the user means rather
+# than acting on a near-miss name. That was observed failing live in both
+# languages, so the guarantee is enforced here at the tool boundary instead:
+# a write tool must state the name it believes it is acting on, and the call is
+# refused when that disagrees with the row the id points at.
+# --------------------------------------------------------------------------
+def test_target_name_matching_rule():
+    """Pure unit check of the rule both failure directions depend on. A substring
+    test would pass 'Pokemon go' inside 'Pokemon golf' and let the real bug through."""
+    m = tools._target_name_matches
+    # The user may be brief: every word they used exists in the stored name.
+    assert m("Netflix", "Netflix Premium") is True
+    assert m("netflix", "Netflix") is True
+    assert m("ChatGPT", "ChatGPT Plus") is True
+    assert m("  netflix  ", "Netflix") is True
+    # Extra or different words mean a different service.
+    assert m("Pokemon golf", "Pokemon go") is False
+    assert m("Netflix Premium", "Netflix") is False
+    assert m("Spotify", "Netflix") is False
+    assert m("", "Netflix") is False
+
+
+async def test_update_refuses_a_mismatched_target_and_changes_nothing(db_pool, user_a):
+    _, token = user_a
+    claims = verify_token(token)
+    created = await dispatch("add_subscription", _sub_args(name="Pokemon go", price="4.99"), claims)
+    assert created.ok
+    sub_id = created.content["id"]
+
+    refused = await dispatch(
+        "update_subscription",
+        {"subscription_id": sub_id, "subscription_name": "Pokemon golf", "price": "30.00"},
+        claims,
+    )
+    assert not refused.ok
+    assert "Pokemon golf" in refused.content["error"]
+    assert "Pokemon go" in refused.content["error"]
+
+    # The decisive assertion: the row is untouched in the database.
+    after = await dispatch("query_subscriptions", {}, claims)
+    row = next(i for i in after.content["items"] if i["name"] == "Pokemon go")
+    assert row["price"] == "4.99"
+
+
+async def test_update_proceeds_on_a_clear_match(db_pool, user_a):
+    """The guard must not trade a wrong-target bug for a friction bug: an
+    unambiguous edit still goes through in one call, with no confirmation step."""
+    _, token = user_a
+    claims = verify_token(token)
+    created = await dispatch("add_subscription", _sub_args(name="Netflix", price="12.99"), claims)
+    sub_id = created.content["id"]
+
+    ok = await dispatch(
+        "update_subscription",
+        {"subscription_id": sub_id, "subscription_name": "Netflix", "price": "15.99"},
+        claims,
+    )
+    assert ok.ok, ok.content
+    assert ok.content["price"] == "15.99"
+
+
+async def test_update_allows_an_abbreviated_but_unambiguous_name(db_pool, user_a):
+    """'Netflix' referring to a row stored as 'Netflix Premium' is a legitimate
+    reference, not a near miss — blocking it would be over-correction."""
+    _, token = user_a
+    claims = verify_token(token)
+    created = await dispatch(
+        "add_subscription", _sub_args(name="Netflix Premium", price="17.99"), claims
+    )
+    ok = await dispatch(
+        "update_subscription",
+        {
+            "subscription_id": created.content["id"],
+            "subscription_name": "Netflix",
+            "price": "18.99",
+        },
+        claims,
+    )
+    assert ok.ok, ok.content
+    assert ok.content["price"] == "18.99"
+
+
+async def test_delete_and_cancel_are_guarded_too(db_pool, user_a):
+    _, token = user_a
+    claims = verify_token(token)
+    created = await dispatch("add_subscription", _sub_args(name="Pokemon go"), claims)
+    sub_id = created.content["id"]
+
+    refused_delete = await dispatch(
+        "delete_subscription",
+        {"subscription_id": sub_id, "subscription_name": "Pokemon golf"},
+        claims,
+    )
+    assert not refused_delete.ok
+
+    refused_cancel = await dispatch(
+        "mark_subscription_cancelled",
+        {"subscription_id": sub_id, "subscription_name": "Pokemon golf"},
+        claims,
+    )
+    assert not refused_cancel.ok
+
+    # Still present and still active — neither refusal half-executed.
+    after = await dispatch("query_subscriptions", {}, claims)
+    row = next(i for i in after.content["items"] if i["name"] == "Pokemon go")
+    assert row["status"] == "active"
+
+
+async def test_write_tools_require_a_target_name(db_pool, user_a):
+    """Omitting the name is a clean validation failure before anything executes,
+    not a silently unguarded write."""
+    _, token = user_a
+    claims = verify_token(token)
+    created = await dispatch("add_subscription", _sub_args(name="Netflix"), claims)
+    sub_id = created.content["id"]
+    for tool in ("update_subscription", "delete_subscription", "mark_subscription_cancelled"):
+        r = await dispatch(tool, {"subscription_id": sub_id}, claims)
+        assert not r.ok, tool
+        assert "subscription_name" in r.content["error"], tool
