@@ -36,16 +36,24 @@ async def enforce_caps(claims: dict) -> str | None:
         return CAP_VELOCITY
 
     # Daily caps via the DB-backed counters (service role bypasses llm_usage RLS,
-    # which is read-own-only). Increment-and-check under concurrency.
+    # which is read-own-only). Increment-and-check under concurrency. Both scopes
+    # are incremented in one statement rather than two sequential ones: this is on
+    # the chat request path, so the saved round-trip is user-visible latency.
+    #
+    # Consequence of batching, deliberate: a message that breaches the *user* cap
+    # now also increments the app-wide counter, where previously the second
+    # increment was skipped. Both counters already count attempts rather than
+    # successful LLM calls (the increment happens before any model work), so this
+    # stays consistent with what they mean — it only makes the app-wide counter
+    # include user-capped attempts too.
     today = date.today()
     pool = get_pool()
     async with pool.acquire() as conn:
-        user_count = await usage_db.increment_daily(conn, user_id, today)
-        if user_count > settings.chat_user_daily_cap:
-            return CAP_USER_DAILY
-        app_count = await usage_db.increment_daily(conn, None, today)
-        if app_count > settings.chat_global_daily_cap:
-            return CAP_GLOBAL_DAILY
+        user_count, app_count = await usage_db.increment_daily_both(conn, user_id, today)
+    if user_count > settings.chat_user_daily_cap:
+        return CAP_USER_DAILY
+    if app_count > settings.chat_global_daily_cap:
+        return CAP_GLOBAL_DAILY
     return None
 
 
@@ -59,5 +67,4 @@ async def record_token_usage(user_id: str, input_tokens: int, output_tokens: int
     today = date.today()
     pool = get_pool()
     async with pool.acquire() as conn:
-        await usage_db.add_tokens(conn, user_id, today, input_tokens, output_tokens)
-        await usage_db.add_tokens(conn, None, today, input_tokens, output_tokens)
+        await usage_db.add_tokens_both(conn, user_id, today, input_tokens, output_tokens)

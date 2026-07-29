@@ -852,3 +852,56 @@ that mutates rows must restore *every* row it touches between cases, for the sam
 reset per test rather than per session. Verdicts should also come from the database and the tool list, never
 from the model's prose — it will describe a successful edit whether or not one happened. Look here:
 `_reset` in the Task 2.11 live-check script (job scratch, not committed).
+
+---
+
+## Session 4 — Chat latency: measuring before fixing (2026-07-29)
+
+### Measure the whole turn before optimising the part you suspect
+The chat felt slow and the obvious suspect was the system prompt, which had grown across four separate
+fixes. Instrumenting a real turn said otherwise: of 5.40s, the model accounted for 1.47s and our own
+backend for the rest. The prompt is ~3,200 input tokens and the entire provider portion — prefill,
+generation, two round-trips — was under a second and a half. Condensing it would have chased ~1% of the
+problem while risking four behavioural rules that each fixed a live defect. The general lesson is that the
+component you can see (a long prompt in a file you read often) is not the component that costs time; a
+measurement reorders the candidates, and it took about twenty minutes to produce. Look here: the phase
+breakdown method — wrap `llm.stream_chat_turn` to time each provider call, and count every `asyncpg`
+round-trip — described in the Task 2.13 log.
+
+### Transaction-scoped RLS costs four network round-trips per block, not one
+`rls_connection` wraps each block in `BEGIN` → `set_config(...)` → work → `COMMIT`, and releasing the
+connection to the pool triggers a reset statement. So an *empty* block cost 181ms against dev Supabase —
+four times a real query. That is the price of the security boundary and it is worth paying: `set_config`
+with `is_local=true` only takes effect inside a transaction, and a session-level alternative would leave
+the previous caller's claims on a pooled connection for the next request to inherit, which is a cross-user
+data leak. The lever is not the mechanism but the *number of blocks*: a chat turn was opening seven, each
+paying the toll. Look here: `backend/app/db/rls.py` and the consolidated blocks in
+`backend/app/services/chat.py`.
+
+### `now()` is transaction-start time, so batched inserts share a timestamp
+The obvious next saving was to persist the assistant's tool-call message and the tool results in one block
+instead of several. It is unsafe here. `messages.created_at` defaults to `now()`, which in Postgres returns
+the *transaction* start time and is therefore identical for every row inserted in one transaction, and
+`messages.id` is a random `gen_random_uuid()` that cannot act as an insertion-order tiebreak. Batching would
+make `get_recent_messages`' `ORDER BY created_at, id` non-deterministic — replaying a tool result before the
+call that produced it, which Gemini rejects outright. Batching message writes needs an explicit ordering
+column first. Use `clock_timestamp()` when you want statement time rather than transaction time. Look here:
+`get_recent_messages` in `backend/app/db/chat.py`.
+
+### Best-effort work belongs beside the request, not after it
+Auto-titling a conversation needs only the user's first message, which is known before the model is called —
+yet it ran last, adding a full serial provider call (~0.74s) to the end of every first turn. `asyncio.create_task`
+starts it alongside the turn and it is awaited just before the final write, so the event order the frontend
+sees is unchanged while the wait disappears. Two things make this safe rather than clever: the coroutine
+cannot raise (an unretrieved task exception would surface as an unrelated warning), and it performs no
+database write of its own, so an abandoned task is harmless. Look here: `_generate_title_safely` and the
+`title_task` handling in `backend/app/services/chat.py`.
+
+### A floating model alias changes production without a deploy
+`LLM_MODEL=gemini-flash-lite-latest` is an alias, not a version. During this task it resolved to
+`gemini-3.5-flash-lite` — a different generation from the one Session 1 selected and validated — and the
+previous `gemini-2.5-flash-lite` had been retired from the API entirely (HTTP 404). So the model behind the
+product can change silently, with no commit and no deploy, taking latency and behaviour with it. A trivial
+two-token request measured 12.97s during the episode. Pin an explicit version when you need reproducible
+behaviour, and treat "the assistant got slower and nothing changed" as a claim to verify rather than dismiss.
+Look here: `llm_model` in `backend/app/config.py`.

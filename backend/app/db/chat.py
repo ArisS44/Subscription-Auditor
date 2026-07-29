@@ -52,6 +52,33 @@ async def get_conversation(conn: asyncpg.Connection, conversation_id: str) -> as
     )
 
 
+async def get_turn_context(
+    conn: asyncpg.Connection, conversation_id: str, user_id: str
+) -> asyncpg.Record | None:
+    """Everything a chat turn needs to know before it starts, in ONE round-trip:
+    the conversation row (None when it does not exist or RLS hides it), how many
+    messages it already has (0 => this is the first, so the turn should auto-title),
+    and the owner's preferred language.
+
+    These were three separate queries; each round-trip to Postgres is real latency
+    on the chat path, and none of the three depends on the others' results. Both
+    scalar sub-selects run under the same RLS-scoped connection, so a conversation
+    or profile the caller cannot see stays invisible here too."""
+    return await conn.fetchrow(
+        """
+        SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at,
+               (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id)
+                   AS message_count,
+               (SELECT p.preferred_language FROM profiles p WHERE p.id = $2)
+                   AS preferred_language
+        FROM conversations c
+        WHERE c.id = $1
+        """,
+        conversation_id,
+        user_id,
+    )
+
+
 async def list_conversations(
     conn: asyncpg.Connection, *, limit: int, offset: int
 ) -> list[asyncpg.Record]:
