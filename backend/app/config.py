@@ -19,8 +19,17 @@ class Settings(BaseSettings):
     # falls back to the Groq key so an existing Groq deployment needs no new secret.
     # llm_base_url is an optional override; when empty the adapter uses the
     # provider's standard endpoint.
+    #
+    # The model is pinned to an explicit version, NOT a `-latest` alias. An alias
+    # re-points whenever the provider ships a new generation, so the model behind
+    # the product changes with no commit and no deploy — taking latency and
+    # behaviour with it. That happened here: `gemini-flash-lite-latest` moved from
+    # the 2.5 generation to gemini-3.5-flash-lite mid-session, and the 2.5 models
+    # are now returning 404 on every call despite still being listed. A pinned
+    # version means the eventual retirement is a loud, schedulable failure instead
+    # of a silent drift. Re-benchmark and bump deliberately when that happens.
     llm_provider: str = "gemini"
-    llm_model: str = "gemini-flash-lite-latest"
+    llm_model: str = "gemini-3.1-flash-lite"
     llm_api_key: str = ""
     llm_base_url: str = ""
     vapid_private_key: str = ""
