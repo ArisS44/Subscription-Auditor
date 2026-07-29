@@ -162,3 +162,45 @@ def test_no_registry_tool_name_appears_verbatim_in_prompt() -> None:
     prompt = build_system_prompt("auto").lower()
     for name in tools_mod.registered_tool_names():
         assert name.lower() not in prompt, f"tool name {name!r} leaked into system prompt"
+
+
+# --------------------------------------------------------------------------
+# Two rules added after live testing surfaced the behaviours they prevent:
+# the assistant answered "why is X uncategorised?" by silently updating the
+# category, and it rendered a table through render_table AND repeated the same
+# rows as markdown in the same reply.
+#
+# Fragments are chosen to sit on ONE line: the prompt hard-wraps at ~76 columns,
+# so an assertion straddling a line break can never match.
+# --------------------------------------------------------------------------
+def test_a_question_does_not_authorise_a_write():
+    prompt = build_system_prompt("en")
+    assert "A question is not an instruction" in prompt
+    assert (
+        "Answer it in words. Do not call a tool that adds, updates, cancels, or deletes" in prompt
+    )
+    # The concrete case that was observed failing, named outright — an abstract
+    # criterion gets re-evaluated by the judgement that was already wrong.
+    assert "by explaining why, never by categorising it." in prompt
+
+
+def test_rendered_data_is_not_also_repeated_as_text():
+    prompt = build_system_prompt("en")
+    assert "Present data once" in prompt
+    assert "rendering is your answer" in prompt
+    assert "as a markdown table in the same reply" in prompt
+
+
+def test_new_rules_do_not_disturb_the_category_or_grounding_rules():
+    """Both additions sit next to rules that earlier tasks fixed defects with, so
+    lock in that those still read as before."""
+    prompt = build_system_prompt("en")
+    # Category remains classification-not-fabrication (Task 2.3).
+    assert "Category is different, and you should set it" in prompt
+    assert 'Assigning "streaming" to Netflix is correct classification, not invention.' in prompt
+    # Grounding is unchanged.
+    assert (
+        "Grounding: every figure, chart, or table you present must come from the result" in prompt
+    )
+    # A question must not become a licence to skip asking for missing values.
+    assert "Never invent, guess, or assume a price, a billing cycle, or a" in prompt
