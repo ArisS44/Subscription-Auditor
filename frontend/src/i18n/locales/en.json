@@ -11,9 +11,7 @@
       "unsupported": "Notifications aren't supported here",
       "unsupportedHint": "This browser can't show push notifications.",
       "error": "Couldn't enable notifications. Please try again.",
-      "checking": "Checking your subscriptions…",
       "checkingDevice": "Checking this device…",
-      "needsSubscription": "Add a subscription first — a reminder needs something to remind you about.",
       "ios": {
         "title": "Add to your Home Screen to turn on notifications",
         "step1": "Tap the Share button",
@@ -37,7 +35,6 @@
     "exit": "Exit setup",
     "progress": "Step {{current}} of {{total}}",
     "continue": "Continue",
-    "skipStep": "Skip",
     "back": "Back",
     "welcome": {
       "title": "Welcome to Auditor",
@@ -94,6 +91,11 @@
       "retry": "Try again"
     }
   },
+  "language": {
+    "label": "Language",
+    "en": "EN",
+    "el": "GR"
+  },
   "dashboard": {
     "title": "Dashboard",
     "brand": "Auditor",
@@ -125,11 +127,6 @@
       "badge": "Coming soon",
       "reports": "Reports and monthly insights will live here in a future update.",
       "chat": "The bilingual AI assistant will live here in a future update."
-    },
-    "language": {
-      "label": "Language",
-      "en": "EN",
-      "el": "GR"
     },
     "logoutDialog": {
       "title": "Log out?",
@@ -354,7 +351,6 @@
     "displayName": "Display name",
     "displayNamePlaceholder": "How you'd like to be addressed",
     "email": "Email",
-    "emailHint": "Your email can't be changed here.",
     "language": "Language",
     "languageAuto": "Automatic (browser)",
     "languageEn": "English",
@@ -485,6 +481,23 @@
     "orDivider": "or",
     "captcha": {
       "error": "Verification failed. Please try again."
+    },
+    "passwordPolicy": {
+      "length": "At least 8 characters",
+      "letter": "At least one letter",
+      "number": "At least one number",
+      "met": "requirement met",
+      "notMet": "requirement not met"
+    },
+    "errors": {
+      "emailRequired": "Enter your email address.",
+      "emailInvalid": "Enter a valid email address.",
+      "passwordRequired": "Enter your password.",
+      "emailNotConfirmed": "Confirm your email first — check your inbox for the confirmation link.",
+      "rateLimited": "Too many attempts. Wait a minute and try again.",
+      "network": "Couldn't reach the server. Check your connection and try again.",
+      "weakPassword": "That password doesn't meet the requirements. Choose a stronger one.",
+      "maybeExistingAccount": "Couldn't create the account. If you already have one, log in or reset your password."
     },
     "login": {
       "title": "Log in",

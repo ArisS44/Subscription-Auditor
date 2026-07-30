@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { AuthBrand } from '@/features/auth/AuthBrand';
+import { PinnedLanguageToggle } from '@/components/LanguageToggle';
 import { Turnstile, type TurnstileHandle } from '@/features/auth/Turnstile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +42,7 @@ function ForgotPassword() {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background px-4 text-center text-foreground">
       <AuthBrand />
+      <PinnedLanguageToggle />
       <h1 className="text-2xl font-semibold">{t('auth.forgotPassword.title')}</h1>
       {sentTo ? (
         <p className="max-w-sm text-muted-foreground">

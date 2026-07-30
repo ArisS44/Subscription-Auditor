@@ -7,7 +7,7 @@ import { useMe } from '@/hooks/useMe';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { LanguageToggle } from './LanguageToggle';
+import { LanguageToggle } from '@/components/LanguageToggle';
 import { SidebarAccount } from './SidebarAccount';
 import { NAV_ITEMS } from './nav-items';
 
