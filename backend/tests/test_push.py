@@ -395,3 +395,34 @@ def test_subscribe_rejects_bad_keys(test_client, user_a, bad):
     body["keys"]["p256dh"] = bad
     r = test_client.post(f"{BASE}/subscribe", headers=_auth(token), json=body)
     assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# Bounded reads on the key-carrying path.
+#
+# `list_subscriptions_for_response` was capped when the device-list route landed;
+# this key-carrying sibling, which the user-initiated delivery fan-out uses, was
+# left open-ended. Nothing in the schema bounds devices per account — each browser
+# profile is another row — and each row here costs an encrypted request to a push
+# service, so an unbounded read turns one send into unbounded outbound work.
+# --------------------------------------------------------------------------
+async def test_keyed_device_read_is_bounded(db_pool, user_a, monkeypatch):
+    user_id, token = user_a
+    claims = verify_token(token)
+    for i in range(3):
+        await push_svc.subscribe(
+            claims,
+            push_svc.PushSubscriptionCreate(
+                **_sub_body(endpoint=f"https://push.example.com/cap-{i}")
+            ),
+        )
+
+    monkeypatch.setattr(push_db, "_MAX_DEVICES_RETURNED", 2)
+    async with rls_connection(claims) as conn:
+        rows = await push_db.list_subscriptions(conn)
+    assert len(rows) == 2, "the keyed device read ignored its ceiling"
+    # Deterministic: a LIMIT without an ORDER BY makes which rows survive arbitrary.
+    assert [r["endpoint"] for r in rows] == [
+        "https://push.example.com/cap-0",
+        "https://push.example.com/cap-1",
+    ]

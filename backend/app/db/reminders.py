@@ -10,6 +10,14 @@ import asyncpg
 # point — reusing a user-scoped helper here, or exposing these to a user route,
 # would defeat RLS for that path.
 
+# Ceiling on devices fanned out to per user in one run. `run-due` already bounds
+# the subscriptions it scans (settings.reminder_job_batch_size), but that bound is
+# only as good as the work each scanned row can trigger: every device here becomes
+# an encrypted request to a push service. Deliberately a separate constant from
+# db/push.py's — see the duplication note above. Far above any real device count,
+# so it is a resource guard, not a policy the user can feel.
+_MAX_DEVICES_PER_USER = 100
+
 
 async def get_due_reminders(conn: asyncpg.Connection, *, limit: int) -> list[asyncpg.Record]:
     """Active subscriptions whose renewal falls inside their effective lead window
@@ -114,10 +122,19 @@ async def get_active_push_subscriptions(
     role. This is intentionally a separate function from db/push.py's rls-scoped
     list — the job has no JWT to scope by, so it filters on user_id explicitly.
     Keeping it here, not in push.py, is what stops this service-role read from
-    being reachable through a user route."""
+    being reachable through a user route.
+
+    Bounded per user, because this is the actual job path: `run-due` is externally
+    triggerable and already caps the subscriptions it scans, but that cap meant
+    little while each of those could fan out to an unbounded number of devices.
+    The ceiling is stated here rather than imported from db/push.py — the two
+    modules are deliberately duplicated so the service-role reads stay unreachable
+    from user code, and sharing state between them would start eroding that."""
     return await conn.fetch(
-        "SELECT id, endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id = $1",
+        "SELECT id, endpoint, p256dh_key, auth_key FROM push_subscriptions "
+        "WHERE user_id = $1 ORDER BY created_at ASC, id ASC LIMIT $2",
         user_id,
+        _MAX_DEVICES_PER_USER,
     )
 
 

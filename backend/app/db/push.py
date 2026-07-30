@@ -53,10 +53,17 @@ async def upsert_subscription(
 async def list_subscriptions(conn: asyncpg.Connection) -> list[asyncpg.Record]:
     """All of the caller's device registrations, keys included — the delivery
     fan-out needs p256dh/auth to encrypt. Row visibility is scoped by RLS on the
-    connection; this adds no WHERE clause of its own."""
+    connection; this adds no WHERE clause of its own.
+
+    Capped at the same ceiling as the keyless read path: nothing in the schema
+    bounds how many devices one account accumulates, and each row here costs an
+    encrypted HTTP request to a push service, so an unbounded result set turns a
+    single send into unbounded outbound work. The secondary `id` sort makes which
+    rows survive the cap deterministic rather than arbitrary."""
     return await conn.fetch(
         "SELECT id, endpoint, p256dh_key, auth_key FROM push_subscriptions "
-        "ORDER BY created_at ASC"
+        "ORDER BY created_at ASC, id ASC LIMIT $1",
+        _MAX_DEVICES_RETURNED,
     )
 
 
