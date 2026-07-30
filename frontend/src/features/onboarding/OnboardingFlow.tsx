@@ -5,11 +5,11 @@ import { Bell, Check, MessageSquare, PlusCircle, Puzzle, SkipForward, X } from '
 import { useAuth } from '@/features/auth/auth-context';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LanguageToggle } from '@/components/LanguageToggle';
 import { cn } from '@/lib/utils';
 import { ChatView } from '@/features/chat/ChatView';
 import { NotificationOptIn } from '@/features/notifications/NotificationOptIn';
 import { SubscriptionFormDialog } from '@/features/subscriptions/SubscriptionFormDialog';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { useOnboarding } from './useOnboarding';
 import { ONBOARDING_STEPS, type OnboardingMethod } from './onboarding-state';
 
@@ -42,6 +42,9 @@ export function OnboardingFlow() {
     <div className="flex h-svh flex-col bg-background text-foreground">
       <header className="flex items-center gap-4 border-b border-border px-6 py-4">
         <ProgressRail stepIndex={flow.stepIndex} stepCount={flow.stepCount} />
+        {/* Inline rather than pinned: the wizard already owns a header bar, so the
+            control belongs in it — a fixed corner element would collide with the ✕. */}
+        <LanguageToggle />
         <Button
           variant="ghost"
           size="icon"
@@ -106,7 +109,7 @@ function StepContent({
     case 'welcome':
       return <WelcomeStep onNext={flow.goNext} />;
     case 'method':
-      return <MethodStep onChoose={flow.chooseMethod} onSkip={flow.goNext} />;
+      return <MethodStep onChoose={flow.chooseMethod} />;
     case 'setup':
       return (
         <SetupStep
@@ -127,9 +130,7 @@ function StepContent({
         />
       );
     case 'notifications':
-      return (
-        <NotificationStep accessToken={accessToken} onNext={flow.goNext} onBack={flow.goBack} />
-      );
+      return <NotificationStep onNext={flow.goNext} onBack={flow.goBack} />;
     case 'done':
       return <DoneStep onFinish={onFinish} finishing={flow.completing} />;
   }
@@ -151,13 +152,14 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
 }
 
 // The three add-methods. Each is a selectable row; choosing advances to setup.
-function MethodStep({
-  onChoose,
-  onSkip,
-}: {
-  onChoose: (method: OnboardingMethod) => void;
-  onSkip: () => void;
-}) {
+//
+// "skip" is a method like any other and must go through `onChoose` too. It used to
+// call a bare "advance" instead, which never recorded the choice: it only looked
+// correct because a first-time user's method is null and the setup step's
+// fall-through happens to be the reassurance screen. A user who had already picked
+// chat, went back, then picked skip advanced with method still 'chat' and landed in
+// the assistant instead.
+function MethodStep({ onChoose }: { onChoose: (method: OnboardingMethod) => void }) {
   const { t } = useTranslation();
   const methods: { id: OnboardingMethod; icon: typeof MessageSquare }[] = [
     { id: 'chat', icon: MessageSquare },
@@ -176,7 +178,7 @@ function MethodStep({
             <li key={id}>
               <button
                 type="button"
-                onClick={() => (id === 'skip' ? onSkip() : onChoose(id))}
+                onClick={() => onChoose(id)}
                 className="flex w-full items-center gap-3 rounded-lg border border-border px-4 py-3 text-left transition-colors hover:border-foreground/20 hover:bg-muted/60"
               >
                 <Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
@@ -293,22 +295,13 @@ function StubStep({
   );
 }
 
-// The notification opt-in step. A reminder needs something to remind about, so
-// the opt-in only appears once the user has at least one subscription; otherwise
-// it explains why. Either way the footer's Skip/Continue advances — declining (or
-// having nothing to enable yet) never blocks finishing onboarding.
-function NotificationStep({
-  accessToken,
-  onNext,
-  onBack,
-}: {
-  accessToken: string | undefined;
-  onNext: () => void;
-  onBack: () => void;
-}) {
+// The notification opt-in step. The opt-in is offered unconditionally: granting
+// notification permission is a browser-level act that does not depend on having
+// any subscriptions yet, and a user who enables reminders during setup should not
+// have to come back to Settings after adding their first subscription. Continue
+// always advances, so declining never blocks finishing onboarding.
+function NotificationStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const { t } = useTranslation();
-  const subsQuery = useSubscriptions(accessToken, { limit: 1 });
-  const hasSubscription = (subsQuery.data?.total ?? 0) > 0;
 
   return (
     <StepCard>
@@ -320,20 +313,9 @@ function NotificationStep({
           <p className="text-sm text-muted-foreground">{t('onboarding.notifications.body')}</p>
         </div>
 
-        {subsQuery.isPending ? (
-          <p className="text-center text-sm text-muted-foreground">
-            {t('notifications.optIn.checking')}
-          </p>
-        ) : hasSubscription ? (
-          <NotificationOptIn />
-        ) : (
-          <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
-            <Bell className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
-            <p className="text-sm text-muted-foreground">
-              {t('notifications.optIn.needsSubscription')}
-            </p>
-          </div>
-        )}
+        {/* `bare`: this step's own heading and body already introduce reminders, so
+            the card's description would repeat them almost verbatim. */}
+        <NotificationOptIn bare />
 
         <StepFooter onBack={onBack} onNext={onNext} nextKey="onboarding.continue" bare />
       </div>
@@ -361,8 +343,13 @@ function DoneStep({ onFinish, finishing }: { onFinish: () => void; finishing: bo
   );
 }
 
-// Shared Back / Skip / Continue controls. `bare` drops the top border+padding for
-// use inside a centred card; the chat step uses the bordered footer variant.
+// Shared Back / Continue controls. `bare` drops the top border+padding for use
+// inside a centred card; the chat step uses the bordered footer variant.
+//
+// There is deliberately no Skip button here: it was wired to the same `onNext` as
+// Continue on every step, so it offered no distinct action and only added noise.
+// (The method step's separate "skip" card is a different thing — it routes to the
+// reassurance screen rather than advancing.)
 function StepFooter({
   onBack,
   onNext,
@@ -385,12 +372,7 @@ function StepFooter({
       <Button variant="ghost" onClick={onBack}>
         {t('onboarding.back')}
       </Button>
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" onClick={onNext}>
-          {t('onboarding.skipStep')}
-        </Button>
-        <Button onClick={onNext}>{t(nextKey)}</Button>
-      </div>
+      <Button onClick={onNext}>{t(nextKey)}</Button>
     </div>
   );
 }

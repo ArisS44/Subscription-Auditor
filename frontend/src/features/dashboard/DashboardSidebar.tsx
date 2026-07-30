@@ -7,7 +7,7 @@ import { useMe } from '@/hooks/useMe';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { LanguageToggle } from './LanguageToggle';
+import { LanguageToggle } from '@/components/LanguageToggle';
 import { SidebarAccount } from './SidebarAccount';
 import { NAV_ITEMS } from './nav-items';
 
@@ -50,7 +50,11 @@ export function DashboardSidebar() {
             <Wallet className="size-4" aria-hidden />
           </span>
           {!collapsed && (
-            <span className="font-heading text-lg font-semibold">{t('dashboard.brand')}</span>
+            // Tight leading because the full product name wraps to two lines at
+            // the sidebar's width; ragged default leading looks like a mistake.
+            <span className="font-heading text-lg leading-tight font-semibold">
+              {t('dashboard.brand')}
+            </span>
           )}
         </div>
         <Button

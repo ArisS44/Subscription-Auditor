@@ -78,8 +78,14 @@ function StepNumber({ children }: { children: ReactNode }) {
 /** The notification opt-in. Renders whichever state applies: an install hint on
  *  an iOS tab, an unsupported/blocked notice, an enabled confirmation, or the
  *  actionable "enable" button. Permission is requested on click (a user gesture),
- *  and only on grant do we register + subscribe via {@link usePushSubscribe}. */
-export function NotificationOptIn() {
+ *  and only on grant do we register + subscribe via {@link usePushSubscribe}.
+ *
+ *  `bare` strips the framing from the *actionable* state only — no card border and
+ *  no description line — for surfaces that already introduce the feature in their
+ *  own heading and body, where repeating it reads as duplicated copy. The
+ *  informational states keep their bordered row in both variants: unlike the
+ *  button, they carry information that needs the frame to read as a notice. */
+export function NotificationOptIn({ bare = false }: { bare?: boolean } = {}) {
   const { t } = useTranslation();
   const { session } = useAuth();
   const accessToken = session?.access_token;
@@ -160,7 +166,11 @@ export function NotificationOptIn() {
   if (checking) {
     return (
       <div
-        className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-muted-foreground"
+        className={
+          bare
+            ? 'flex items-center justify-center py-2 text-muted-foreground'
+            : 'flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-muted-foreground'
+        }
         role="status"
         aria-label={t('notifications.optIn.checkingDevice')}
       >
@@ -180,19 +190,33 @@ export function NotificationOptIn() {
     }
   }
 
+  const enableButton = (
+    <Button onClick={enable} disabled={subscribe.isPending}>
+      <Bell aria-hidden />
+      {subscribe.isPending ? t('notifications.optIn.enabling') : t('notifications.optIn.enable')}
+    </Button>
+  );
+  const errorLine = subscribe.isError && (
+    <p className="text-sm text-destructive">{t('notifications.optIn.error')}</p>
+  );
+
+  if (bare) {
+    return (
+      <div className="flex flex-col items-center gap-2 text-center">
+        {enableButton}
+        {errorLine}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+    <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-card p-4">
       <div className="flex items-start gap-3">
         <BellRing className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
         <p className="text-sm text-muted-foreground">{t('notifications.optIn.description')}</p>
       </div>
-      <Button onClick={enable} disabled={subscribe.isPending} className="self-start">
-        <Bell aria-hidden />
-        {subscribe.isPending ? t('notifications.optIn.enabling') : t('notifications.optIn.enable')}
-      </Button>
-      {subscribe.isError && (
-        <p className="text-sm text-destructive">{t('notifications.optIn.error')}</p>
-      )}
+      {enableButton}
+      {errorLine}
     </div>
   );
 }

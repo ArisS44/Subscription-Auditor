@@ -89,6 +89,26 @@ describe('OnboardingFlow', () => {
     expect(screen.getByText(i18n.t('onboarding.skip.title'))).toBeInTheDocument();
   });
 
+  it('reaches the reassurance screen when skipping after a method was already chosen', async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    // The state a user lands in by picking "chat with Apollon" and then going Back:
+    // sitting on the method step with a method already recorded.
+    localStorage.setItem(
+      'auditor.onboarding',
+      JSON.stringify({ stepIndex: 1, method: 'chat', entered: true }),
+    );
+    renderFlow();
+
+    expect(screen.getByText(i18n.t('onboarding.method.title'))).toBeInTheDocument();
+    await user.click(screen.getByText(i18n.t('onboarding.method.skip.title')));
+
+    // Skipping must record 'skip' rather than merely advancing — otherwise the
+    // stale 'chat' method renders the assistant here instead.
+    expect(screen.getByText(i18n.t('onboarding.skip.title'))).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('onboarding.manual.title'))).not.toBeInTheDocument();
+  });
+
   it('exits to the dashboard without completing when the user closes it', async () => {
     const user = userEvent.setup();
     const fetchMock = mockFetch();
@@ -108,22 +128,19 @@ describe('OnboardingFlow', () => {
     expect(rail).toBeInTheDocument();
   });
 
-  it('has a working Skip control that reads as a string and advances', async () => {
+  it('offers no footer Skip control — only Back and Continue', async () => {
     const user = userEvent.setup();
     mockFetch();
     renderFlow();
 
-    // Reach a step with the footer's Skip control (the manual setup step).
+    // Reach a step that renders the shared footer (the manual setup step).
     await user.click(screen.getByRole('button', { name: i18n.t('onboarding.welcome.start') }));
     await user.click(screen.getByText(i18n.t('onboarding.method.manual.title')));
 
-    const skip = screen.getByRole('button', { name: i18n.t('onboarding.skipStep') });
-    // Guards the leaf-vs-namespace i18n collision: the label must be a resolved
-    // string, never i18next's "returned an object instead of string" fallback.
-    expect(skip.textContent).toBe('Skip');
-    expect(skip.textContent).not.toMatch(/returned an object/i);
-
-    await user.click(skip);
-    expect(screen.getByText(i18n.t('onboarding.extension.title'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: i18n.t('onboarding.continue') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: i18n.t('onboarding.back') })).toBeInTheDocument();
+    // The old Skip button duplicated Continue's action; it must be gone, and its
+    // translation key with it.
+    expect(screen.queryByRole('button', { name: /^(Skip|Παράλειψη)$/ })).not.toBeInTheDocument();
   });
 });

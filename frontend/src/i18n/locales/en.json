@@ -11,9 +11,7 @@
       "unsupported": "Notifications aren't supported here",
       "unsupportedHint": "This browser can't show push notifications.",
       "error": "Couldn't enable notifications. Please try again.",
-      "checking": "Checking your subscriptions…",
       "checkingDevice": "Checking this device…",
-      "needsSubscription": "Add a subscription first — a reminder needs something to remind you about.",
       "ios": {
         "title": "Add to your Home Screen to turn on notifications",
         "step1": "Tap the Share button",
@@ -37,10 +35,9 @@
     "exit": "Exit setup",
     "progress": "Step {{current}} of {{total}}",
     "continue": "Continue",
-    "skipStep": "Skip",
     "back": "Back",
     "welcome": {
-      "title": "Welcome to Auditor",
+      "title": "Welcome to Subscription Auditor",
       "body": "Let's get your subscriptions set up so you can see where your money goes. This only takes a minute, and you can skip any step.",
       "start": "Get started"
     },
@@ -94,9 +91,13 @@
       "retry": "Try again"
     }
   },
+  "language": {
+    "label": "Language",
+    "en": "EN",
+    "el": "ΕΛ"
+  },
   "dashboard": {
-    "title": "Dashboard",
-    "brand": "Auditor",
+    "brand": "Subscription Auditor",
     "nav": {
       "overview": "Overview",
       "subscriptions": "Subscriptions",
@@ -105,31 +106,20 @@
       "settings": "Settings"
     },
     "overview": {
-      "title": "Overview",
-      "placeholder": "Your spending summary will appear here."
+      "title": "Overview"
     },
     "subscriptions": {
-      "title": "Subscriptions",
-      "placeholder": "Your subscriptions will appear here."
+      "title": "Subscriptions"
     },
     "detail": {
-      "title": "Subscription details",
-      "placeholder": "Details for this subscription will appear here.",
       "back": "Back to subscriptions"
     },
     "settings": {
-      "title": "Settings",
-      "placeholder": "Account settings will appear here."
+      "title": "Settings"
     },
     "comingSoon": {
       "badge": "Coming soon",
-      "reports": "Reports and monthly insights will live here in a future update.",
-      "chat": "The bilingual AI assistant will live here in a future update."
-    },
-    "language": {
-      "label": "Language",
-      "en": "EN",
-      "el": "GR"
+      "reports": "Reports and monthly insights will live here in a future update."
     },
     "logoutDialog": {
       "title": "Log out?",
@@ -262,13 +252,13 @@
     },
     "cancelDialog": {
       "title": "Cancel subscription?",
-      "description": "This marks \"{{name}}\" as cancelled but keeps it in your list and history.",
+      "description": "This marks “{{name}}” as cancelled but keeps it in your list and history.",
       "confirm": "Cancel subscription",
       "cancel": "Keep it"
     },
     "deleteDialog": {
       "title": "Delete subscription?",
-      "description": "This permanently deletes \"{{name}}\". This can't be undone.",
+      "description": "This permanently deletes “{{name}}”. This can't be undone.",
       "confirm": "Delete",
       "cancel": "Keep it"
     },
@@ -276,25 +266,23 @@
       "cancel": "Cancel",
       "pause": {
         "title": "Pause subscription?",
-        "description": "This marks \"{{name}}\" as paused. It stops counting toward your spending until you resume it.",
+        "description": "This marks “{{name}}” as paused. It stops counting toward your spending until you resume it.",
         "confirm": "Pause"
       },
       "resume": {
         "title": "Resume subscription?",
-        "description": "This sets \"{{name}}\" back to active, so it counts toward your spending again.",
+        "description": "This sets “{{name}}” back to active, so it counts toward your spending again.",
         "confirm": "Resume"
       },
       "reactivate": {
         "title": "Reactivate subscription?",
-        "description": "This sets \"{{name}}\" back to active and clears its cancellation date.",
+        "description": "This sets “{{name}}” back to active and clears its cancellation date.",
         "confirm": "Reactivate"
       }
     },
     "detail": {
       "price": "Price",
-      "billingCycle": "Billing cycle",
       "category": "Category",
-      "status": "Status",
       "startDate": "Start date",
       "nextRenewal": "Next renewal",
       "created": "Added",
@@ -327,7 +315,6 @@
     "empty": "No active subscriptions yet. Add one to see your spending here.",
     "loadError": "Could not load your overview. Please try again.",
     "currency": {
-      "label": "Currency",
       "all": "All (per currency)"
     },
     "convert": {
@@ -339,10 +326,9 @@
       "unavailable": "Currency conversion is temporarily unavailable."
     },
     "roadmap": {
-      "teaser": "On the way: invoice import, a browser extension to track how much you actually use your subscriptions, and renewal reminders."
+      "teaser": "On the way: invoice import and a browser extension to track how much you actually use your subscriptions."
     },
     "chartType": {
-      "label": "Chart type",
       "bar": "Horizontal bars",
       "column": "Vertical bars",
       "donut": "Donut"
@@ -354,7 +340,6 @@
     "displayName": "Display name",
     "displayNamePlaceholder": "How you'd like to be addressed",
     "email": "Email",
-    "emailHint": "Your email can't be changed here.",
     "language": "Language",
     "languageAuto": "Automatic (browser)",
     "languageEn": "English",
@@ -368,8 +353,6 @@
     "notifications": {
       "title": "Notifications",
       "description": "Choose which reminders you'll get.",
-      "renewalReminders": "Renewal reminders",
-      "renewalRemindersHint": "A heads-up before a subscription renews.",
       "weeklySummary": "Weekly summary",
       "weeklySummaryHint": "A weekly digest of your spending.",
       "monthlyInsights": "Monthly insights",
@@ -400,14 +383,8 @@
     "last": "Last page",
     "page": "Page {{page}}"
   },
-  "nav": {
-    "home": "Home",
-    "dashboard": "Dashboard"
-  },
   "hello": {
-    "greeting": "Hello, {{email}}",
     "loading": "Loading your profile…",
-    "error": "Could not load your profile. Please try again.",
     "logout": "Log out"
   },
   "chat": {
@@ -485,6 +462,23 @@
     "orDivider": "or",
     "captcha": {
       "error": "Verification failed. Please try again."
+    },
+    "passwordPolicy": {
+      "length": "At least 8 characters",
+      "letter": "At least one letter",
+      "number": "At least one number",
+      "met": "requirement met",
+      "notMet": "requirement not met"
+    },
+    "errors": {
+      "emailRequired": "Enter your email address.",
+      "emailInvalid": "Enter a valid email address.",
+      "passwordRequired": "Enter your password.",
+      "emailNotConfirmed": "Confirm your email first — check your inbox for the confirmation link.",
+      "rateLimited": "Too many attempts. Wait a minute and try again.",
+      "network": "Couldn't reach the server. Check your connection and try again.",
+      "weakPassword": "That password doesn't meet the requirements. Choose a stronger one.",
+      "maybeExistingAccount": "Couldn't create the account. If you already have one, log in or reset your password."
     },
     "login": {
       "title": "Log in",

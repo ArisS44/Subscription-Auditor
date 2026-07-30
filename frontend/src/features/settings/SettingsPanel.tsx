@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NotificationsCard } from './NotificationsCard';
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import {
   Select,
   SelectContent,
@@ -102,8 +102,9 @@ export function SettingsPanel() {
             <FieldGroup className="gap-4">
               <Field>
                 <FieldLabel>{t('settings.email')}</FieldLabel>
+                {/* Disabled + readOnly already conveys that this is not editable;
+                    a hint saying so as well is redundant. */}
                 <Input value={profile?.email ?? ''} disabled readOnly />
-                <FieldDescription>{t('settings.emailHint')}</FieldDescription>
               </Field>
 
               <Field>
