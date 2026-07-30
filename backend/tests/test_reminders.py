@@ -317,3 +317,51 @@ def test_run_due_accepts_correct_token(test_client, monkeypatch):
     r = test_client.post(f"{BASE}/run-due", headers={"X-Job-Token": "the-real-secret-token"})
     assert r.status_code == 200
     assert r.json() == {"due": 0, "sent": 0, "skipped_already_sent": 0, "pruned": 0, "failed": 0}
+
+
+# --------------------------------------------------------------------------
+# Bounded work on the job path.
+#
+# `run-due` is externally triggerable and already caps the subscriptions it
+# scans, but that cap was only as good as the work each scanned row could
+# trigger: every device fanned out to becomes an encrypted request to a push
+# service. The device read is now bounded per user too.
+#
+# The cap is monkeypatched down rather than creating 101 real rows — this suite
+# runs against shared dev, and the behaviour under test is "the LIMIT is applied
+# and applied deterministically", which a cap of 2 demonstrates exactly as well.
+# --------------------------------------------------------------------------
+async def test_job_device_fanout_is_bounded_per_user(db_pool, user_a, monkeypatch):
+    uid, _ = user_a
+    for i in range(3):
+        await _add_device(uid, f"https://push.example.com/bounded-{i}")
+    assert await _device_count(uid) == 3
+
+    monkeypatch.setattr(reminders_db, "_MAX_DEVICES_PER_USER", 2)
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await reminders_db.get_active_push_subscriptions(conn, user_id=uid)
+    assert len(rows) == 2, "the job read more devices than its per-user ceiling"
+
+
+async def test_job_device_fanout_keeps_a_deterministic_order(db_pool, user_a, monkeypatch):
+    """A LIMIT without an ORDER BY makes *which* devices survive the cap
+    arbitrary, so the same user could get a reminder on a different device each
+    run. Oldest-first, tie-broken by id."""
+    uid, _ = user_a
+    for i in range(3):
+        await _add_device(uid, f"https://push.example.com/ordered-{i}")
+
+    pool = get_pool()
+    monkeypatch.setattr(reminders_db, "_MAX_DEVICES_PER_USER", 2)
+    async with pool.acquire() as conn:
+        first = [
+            r["endpoint"]
+            for r in await reminders_db.get_active_push_subscriptions(conn, user_id=uid)
+        ]
+        second = [
+            r["endpoint"]
+            for r in await reminders_db.get_active_push_subscriptions(conn, user_id=uid)
+        ]
+    assert first == second
+    assert first == ["https://push.example.com/ordered-0", "https://push.example.com/ordered-1"]

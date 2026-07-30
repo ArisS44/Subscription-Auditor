@@ -905,3 +905,41 @@ product can change silently, with no commit and no deploy, taking latency and be
 two-token request measured 12.97s during the episode. Pin an explicit version when you need reproducible
 behaviour, and treat "the assistant got slower and nothing changed" as a claim to verify rather than dismiss.
 Look here: `llm_model` in `backend/app/config.py`.
+
+---
+
+## Session 4 — Constraints as the second wall (2026-07-30)
+
+### A CHECK constraint is the wall that survives the code being wrong
+The 0–30 bound on a reminder lead time existed only in Pydantic, which protects exactly one route: values
+arriving through the API. A `CHECK` moves the rule into Postgres, so the row is refused no matter who asks
+— a psql session, a future job, a migration, or a bug that bypasses the request model. That is what "two
+walls" means in practice, and the walls have to state the same thing or one of them is decoration. `NOT
+NULL` is the same idea for absence: `ProfileResponse` declares these fields non-nullable, so a NULL would
+have turned `GET /me` into a 500 — "no NULL exists today" is an observation, `NOT NULL` is a rule. Both are
+validated against every existing row as they are applied, which is why the row audit came first: one
+offending row aborts the migration. Look here: `supabase/migrations/20260730090000_harden_profile_lead_time_constraints.sql`.
+
+### Testing a database constraint through the API proves nothing
+A test that PATCHes an out-of-range lead time and expects a 422 passes identically whether or not the
+constraint exists — Pydantic rejects it first, so the test never reaches the database. It would have passed
+against the schema as it stood *before* this migration, which is the definition of a vacuous test. The
+constraint tests therefore open a raw `asyncpg` connection, outside the app pool and outside RLS, so the
+only thing capable of refusing the write is the constraint itself. Confirmed by dropping the constraint on
+purpose and watching `DID NOT RAISE CheckViolationError`. Look here:
+`backend/tests/test_profile_constraints.py`.
+
+### A LIMIT without an ORDER BY is a non-deterministic result, not a cap
+Bounding the reminder job's device read at 100 rows is only half the fix: with no `ORDER BY`, *which* 100
+rows Postgres returns is unspecified and may change between runs, so a user with more devices than the
+ceiling could be reminded on a different device each time. Any query with a `LIMIT` needs a total ordering —
+here `created_at ASC, id ASC`, with the id as the tie-break because timestamps collide. Look here:
+`get_active_push_subscriptions` in `backend/app/db/reminders.py`.
+
+### "Bounded work" attaches to the path, not to the function that looks like it
+The instruction was to cap `db/push.py::list_subscriptions`, described as the reminder job's read. Tracing
+the callers showed it belongs to the user-initiated fan-out, while the job uses a deliberately separate
+service-role function in `db/reminders.py` — which was the genuinely unbounded one. Capping only the named
+function would have looked complete while leaving the externally-triggerable path unbounded. When a rule is
+justified by *where code runs*, verify where it actually runs before applying it. Look here: the two
+`_MAX_DEVICES_*` constants, duplicated on purpose across `db/push.py` and `db/reminders.py`.
