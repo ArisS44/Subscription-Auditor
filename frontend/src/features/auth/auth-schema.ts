@@ -20,18 +20,33 @@ function emailField(t: TFunction) {
     );
 }
 
+/** The policy-checked password field. Shared by sign-up and password reset so the
+ *  two surfaces cannot disagree about what a valid password is — they did once,
+ *  with reset accepting passwords sign-up would have refused. */
+function passwordField(t: TFunction) {
+  return z.string().superRefine((value, ctx) => {
+    // One issue per unmet rule, so the form can report exactly what is missing
+    // instead of a single catch-all "invalid password".
+    for (const rule of PASSWORD_RULES) {
+      if (!rule.test(value)) {
+        ctx.addIssue({ code: 'custom', message: t(`auth.passwordPolicy.${rule.id}`) });
+      }
+    }
+  });
+}
+
 export function createSignupSchema(t: TFunction) {
   return z.object({
     email: emailField(t),
-    password: z.string().superRefine((value, ctx) => {
-      // One issue per unmet rule, so the form can report exactly what is missing
-      // instead of a single catch-all "invalid password".
-      for (const rule of PASSWORD_RULES) {
-        if (!rule.test(value)) {
-          ctx.addIssue({ code: 'custom', message: t(`auth.passwordPolicy.${rule.id}`) });
-        }
-      }
-    }),
+    password: passwordField(t),
+  });
+}
+
+/** Choosing a new password after a reset link — same policy as sign-up, since it
+ *  sets exactly the same credential. */
+export function createResetPasswordSchema(t: TFunction) {
+  return z.object({
+    password: passwordField(t),
   });
 }
 
@@ -46,3 +61,4 @@ export function createLoginSchema(t: TFunction) {
 
 export type SignupFormValues = z.infer<ReturnType<typeof createSignupSchema>>;
 export type LoginFormValues = z.infer<ReturnType<typeof createLoginSchema>>;
+export type ResetPasswordFormValues = z.infer<ReturnType<typeof createResetPasswordSchema>>;

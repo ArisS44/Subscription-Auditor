@@ -31,6 +31,19 @@ export function signInErrorKey(error: AuthError): string {
   return 'auth.login.error';
 }
 
+/** Setting a new password from a reset link. Supabase remains the enforcement
+ *  point — the client policy is UX — so its own rejection is surfaced rather than
+ *  hidden behind the generic "link may have expired" message, which would send the
+ *  user off requesting another link when the real problem was the password. */
+export function updatePasswordErrorKey(error: AuthError): string {
+  if (isNetworkFailure(error)) return 'auth.errors.network';
+  if (isRateLimit(error)) return 'auth.errors.rateLimited';
+  if (error.code === 'weak_password') return 'auth.errors.weakPassword';
+  if (error.code === 'same_password') return 'auth.errors.samePassword';
+  // Anything else is most likely an expired or already-used recovery link.
+  return 'auth.resetPassword.error';
+}
+
 export function signUpErrorKey(error: AuthError): string {
   if (isNetworkFailure(error)) return 'auth.errors.network';
   if (isRateLimit(error)) return 'auth.errors.rateLimited';
