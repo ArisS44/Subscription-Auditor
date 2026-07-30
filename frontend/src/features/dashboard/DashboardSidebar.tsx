@@ -50,7 +50,11 @@ export function DashboardSidebar() {
             <Wallet className="size-4" aria-hidden />
           </span>
           {!collapsed && (
-            <span className="font-heading text-lg font-semibold">{t('dashboard.brand')}</span>
+            // Tight leading because the full product name wraps to two lines at
+            // the sidebar's width; ragged default leading looks like a mistake.
+            <span className="font-heading text-lg leading-tight font-semibold">
+              {t('dashboard.brand')}
+            </span>
           )}
         </div>
         <Button

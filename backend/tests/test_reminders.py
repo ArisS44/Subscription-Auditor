@@ -269,7 +269,13 @@ def test_copy_renders_en_el_and_auto_defaults_english():
     auto = render_renewal_reminder("auto", **args)
 
     assert en.title == "Upcoming renewal" and "Netflix" in en.body and "9.99" in en.body
-    assert el.title == "Επερχόμενη ανανέωση" and "Netflix" in el.body and "9.99" in el.body
+    assert el.title == "Επερχόμενη ανανέωση" and "Netflix" in el.body
+    # Each language uses its own decimal separator, as the frontend's Intl
+    # formatting does: Greek writes 9,99 where English writes 9.99.
+    assert "9,99" in el.body and "9.99" not in el.body
+    # Greek leads with "Η συνδρομή" instead of putting a gendered article on an
+    # arbitrary subscription name.
+    assert el.body.startswith("Η συνδρομή Netflix")
     assert auto.model_dump() == en.model_dump()  # auto → English
     assert resolve_language("auto") == "en" and resolve_language("el") == "el"
 

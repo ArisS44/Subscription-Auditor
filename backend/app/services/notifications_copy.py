@@ -25,8 +25,11 @@ _RENEWAL_TEMPLATES = {
     },
     "el": {
         "title": "Επερχόμενη ανανέωση",
-        # e.g. "Το Claude Pro ανανεώνεται στις 24/07/2026 για 20.00 USD."
-        "body": "Το {name} ανανεώνεται στις {when} για {price} {currency}.",
+        # e.g. "Η συνδρομή Claude Pro ανανεώνεται στις 24/07/2026 για 20,00 USD."
+        # Leads with "Η συνδρομή" rather than an article on {name}: Greek articles
+        # carry gender, and a subscription name is arbitrary (η Netflix, ο
+        # Απόλλωνας), so any hardcoded article is wrong for some names.
+        "body": "Η συνδρομή {name} ανανεώνεται στις {when} για {price} {currency}.",
     },
 }
 
@@ -38,11 +41,19 @@ def resolve_language(preferred_language: str | None) -> str:
     return "el" if preferred_language == "el" else "en"
 
 
-def _format_price(price: Decimal) -> str:
-    """Two-decimal-place string for the amount. Currency is shown as its ISO code
-    (positioned per language in the template) rather than a symbol — the code is
-    unambiguous and needs no per-currency symbol table."""
-    return f"{price:.2f}"
+def _format_price(price: Decimal, lang: str) -> str:
+    """Two-decimal-place string for the amount, with the decimal separator the
+    language actually uses — Greek writes 20,00 where English writes 20.00, and the
+    rest of the app gets this from `Intl` on the frontend.
+
+    Done by substitution rather than the `locale` module, which is process-global
+    and would make a per-user format depend on interpreter-wide state.
+
+    Currency is shown as its ISO code (positioned per language in the template)
+    rather than a symbol — the code is unambiguous and needs no per-currency symbol
+    table."""
+    text = f"{price:.2f}"
+    return text.replace(".", ",") if lang == "el" else text
 
 
 def render_renewal_reminder(
@@ -60,6 +71,6 @@ def render_renewal_reminder(
     template = _RENEWAL_TEMPLATES[lang]
     when = renewal_date.strftime(_DATE_FORMATS[lang])
     body = template["body"].format(
-        name=name, when=when, currency=currency, price=_format_price(price)
+        name=name, when=when, currency=currency, price=_format_price(price, lang)
     )
     return NotificationPayload(title=template["title"], body=body)
