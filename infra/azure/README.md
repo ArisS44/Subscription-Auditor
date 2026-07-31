@@ -276,7 +276,7 @@ Key Vault → secret-reference → env-var mechanism as everything above.
 | Key Vault secret | Container App alias | Env var | Value |
 |---|---|---|---|
 | `llm-provider` | `llm-provider` | `LLM_PROVIDER` | `gemini` |
-| `llm-model` | `llm-model` | `LLM_MODEL` | `gemini-flash-lite-latest` |
+| `llm-model` | `llm-model` | `LLM_MODEL` | `gemini-3.1-flash-lite` (pinned — see below) |
 | `llm-api-key` | `llm-api-key` | `LLM_API_KEY` | the Gemini key (paid Cloud Prepay tier) |
 | `chat-global-daily-cap` | `chat-global-cap` | `CHAT_GLOBAL_DAILY_CAP` | `2000` |
 
@@ -284,9 +284,21 @@ Note the alias shortening: `chat-global-daily-cap` is 21 chars, over the Contain
 20-char cap, so its Container App alias is `chat-global-cap` (same reason `supabase-service-role-key`
 became `sb-service-role-key` above). The Key Vault secret keeps the full descriptive name.
 
+**`llm-model` is pinned to an explicit version, never a `-latest` alias.** An alias re-points whenever
+the provider ships a new generation, which changes the model behind the product with no commit and no
+deploy — this happened here: `gemini-flash-lite-latest` moved to a new generation mid-development and
+altered chat behaviour, and production ran on the alias until it was pinned. A pinned version turns
+the eventual retirement into a loud, schedulable failure instead of silent drift. Bump it
+deliberately, after re-benchmarking.
+
+**Changing this secret does not affect a running app on its own.** A Container App resolves its Key
+Vault references when a *revision starts*, so updating the secret takes effect only on the next
+revision. Either set it just before a deploy (which creates one anyway), or force one afterwards with
+`az containerapp update`.
+
 ```bash
 az keyvault secret set --vault-name "$KV_NAME" --name llm-provider          --value "gemini"
-az keyvault secret set --vault-name "$KV_NAME" --name llm-model             --value "gemini-flash-lite-latest"
+az keyvault secret set --vault-name "$KV_NAME" --name llm-model             --value "gemini-3.1-flash-lite"
 az keyvault secret set --vault-name "$KV_NAME" --name llm-api-key           --value "$GEMINI_API_KEY"
 az keyvault secret set --vault-name "$KV_NAME" --name chat-global-daily-cap --value "2000"
 
