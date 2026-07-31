@@ -124,7 +124,15 @@ export function OverviewPanel() {
   // currency into one target and show comparison totals, each labeled an estimate.
   const [convertOn, setConvertOn] = useState(false);
   const [targetCurrency, setTargetCurrency] = useState<string>('');
-  const effectiveTarget = targetCurrency || currencies[0] || '';
+  // Default the conversion target to EUR when the user actually holds a EUR
+  // subscription: the app's primary audience is in the eurozone, so "what does
+  // this all cost me in euros" is the question being asked. Falling back to
+  // `currencies[0]` (the highest monthly burn) keeps the previous behaviour for
+  // anyone with no EUR at all — and matters because the selector below lists
+  // exactly `currencies` as its options, so a target outside that list would
+  // leave the dropdown displaying nothing.
+  const effectiveTarget =
+    targetCurrency || (currencies.includes('EUR') ? 'EUR' : currencies[0]) || '';
   // Only the *other* currencies need rates; the target is 1:1.
   const fxSymbols = useMemo(
     () => currencies.filter((c) => c !== effectiveTarget),
