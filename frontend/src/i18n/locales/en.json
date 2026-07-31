@@ -1,7 +1,7 @@
 {
   "notifications": {
     "optIn": {
-      "description": "Get a reminder before a subscription renews.",
+      "description": "Each browser is registered separately. You can turn this off any time.",
       "enable": "Enable notifications",
       "enabling": "Enabling…",
       "enabled": "Notifications are on",
