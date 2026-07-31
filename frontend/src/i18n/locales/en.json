@@ -45,8 +45,8 @@
       "title": "How would you like to start?",
       "body": "Add your first subscriptions in whichever way suits you.",
       "chat": {
-        "title": "Chat with Apollon",
-        "body": "Tell the assistant what you're subscribed to and it adds them for you."
+        "title": "Add them by chatting",
+        "body": "Tell Apollon, the built-in assistant, what you're subscribed to and it adds them for you."
       },
       "manual": {
         "title": "Add one manually",
@@ -61,10 +61,6 @@
       "title": "Add a subscription",
       "body": "Add your first subscription now, or continue and do it later.",
       "add": "Add subscription"
-    },
-    "skip": {
-      "title": "No problem",
-      "body": "You can add subscriptions anytime from the dashboard or by chatting with Apollon."
     },
     "extension": {
       "title": "Browser extension",

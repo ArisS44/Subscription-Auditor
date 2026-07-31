@@ -79,20 +79,24 @@ describe('OnboardingFlow', () => {
     expect(patched).toBe(true);
   });
 
-  it('lets a user skip the whole method step to the reassurance screen', async () => {
+  it('skips straight past setup to the next real step', async () => {
     const user = userEvent.setup();
     mockFetch();
     renderFlow();
 
     await user.click(screen.getByRole('button', { name: i18n.t('onboarding.welcome.start') }));
     await user.click(screen.getByText(i18n.t('onboarding.method.skip.title')));
-    expect(screen.getByText(i18n.t('onboarding.skip.title'))).toBeInTheDocument();
+
+    // The setup step had nothing to show a skipping user, so it is bypassed
+    // entirely rather than rendering a slide that restates the skip option.
+    expect(screen.getByText(i18n.t('onboarding.extension.title'))).toBeInTheDocument();
+    expect(screen.queryByText(i18n.t('onboarding.manual.title'))).not.toBeInTheDocument();
   });
 
-  it('reaches the reassurance screen when skipping after a method was already chosen', async () => {
+  it('does not fall back into the assistant when skipping after a method was already chosen', async () => {
     const user = userEvent.setup();
     mockFetch();
-    // The state a user lands in by picking "chat with Apollon" and then going Back:
+    // The state a user lands in by picking the chat method and then going Back:
     // sitting on the method step with a method already recorded.
     localStorage.setItem(
       'auditor.onboarding',
@@ -104,9 +108,42 @@ describe('OnboardingFlow', () => {
     await user.click(screen.getByText(i18n.t('onboarding.method.skip.title')));
 
     // Skipping must record 'skip' rather than merely advancing — otherwise the
-    // stale 'chat' method renders the assistant here instead.
-    expect(screen.getByText(i18n.t('onboarding.skip.title'))).toBeInTheDocument();
+    // stale 'chat' method renders the assistant here instead. The bypass reads
+    // that recorded method, so this also proves the bypass is not keying off a
+    // stale value.
+    expect(screen.getByText(i18n.t('onboarding.extension.title'))).toBeInTheDocument();
     expect(screen.queryByText(i18n.t('onboarding.manual.title'))).not.toBeInTheDocument();
+  });
+
+  it('goes back past setup rather than into it', async () => {
+    const user = userEvent.setup();
+    mockFetch();
+    // A skipping user sitting on the step after the bypassed one.
+    localStorage.setItem(
+      'auditor.onboarding',
+      JSON.stringify({ stepIndex: 3, method: 'skip', entered: true }),
+    );
+    renderFlow();
+
+    expect(screen.getByText(i18n.t('onboarding.extension.title'))).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: i18n.t('onboarding.back') }));
+
+    // Back must continue backwards through the bypassed step to the method
+    // choice, not stall on the step that has no content.
+    expect(screen.getByText(i18n.t('onboarding.method.title'))).toBeInTheDocument();
+  });
+
+  it('resumes a stored position that points at the bypassed step', async () => {
+    mockFetch();
+    // Progress written before the setup step was bypassed, or by any path that
+    // recorded skip while sitting on setup.
+    localStorage.setItem(
+      'auditor.onboarding',
+      JSON.stringify({ stepIndex: 2, method: 'skip', entered: true }),
+    );
+    renderFlow();
+
+    expect(screen.getByText(i18n.t('onboarding.extension.title'))).toBeInTheDocument();
   });
 
   it('exits to the dashboard without completing when the user closes it', async () => {

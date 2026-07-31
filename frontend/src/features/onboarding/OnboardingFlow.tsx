@@ -41,7 +41,7 @@ export function OnboardingFlow() {
   return (
     <div className="flex h-svh flex-col bg-background text-foreground">
       <header className="flex items-center gap-4 border-b border-border px-6 py-4">
-        <ProgressRail stepIndex={flow.stepIndex} stepCount={flow.stepCount} />
+        <ProgressRail stepIndex={flow.railIndex} stepCount={flow.railCount} />
         {/* Inline rather than pinned: the wizard already owns a header bar, so the
             control belongs in it — a fixed corner element would collide with the ✕. */}
         <LanguageToggle />
@@ -151,14 +151,14 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
   );
 }
 
-// The three add-methods. Each is a selectable row; choosing advances to setup.
+// The three add-methods. Each is a selectable row; choosing chat or manual
+// advances to setup, while skip bypasses it (see useOnboarding).
 //
 // "skip" is a method like any other and must go through `onChoose` too. It used to
-// call a bare "advance" instead, which never recorded the choice: it only looked
-// correct because a first-time user's method is null and the setup step's
-// fall-through happens to be the reassurance screen. A user who had already picked
-// chat, went back, then picked skip advanced with method still 'chat' and landed in
-// the assistant instead.
+// call a bare "advance" instead, which never recorded the choice — so a user who
+// had already picked chat, went back, then picked skip advanced with method still
+// 'chat' and landed in the assistant. That is now also what makes the bypass
+// correct: it keys off the recorded method.
 function MethodStep({ onChoose }: { onChoose: (method: OnboardingMethod) => void }) {
   const { t } = useTranslation();
   const methods: { id: OnboardingMethod; icon: typeof MessageSquare }[] = [
@@ -247,12 +247,13 @@ function SetupStep({
     );
   }
 
-  // Skipped adding — a short reassurance, then continue.
+  // Unreachable in practice: the hook bypasses this step for any method without
+  // setup content, so `method` here is always 'chat' or 'manual'. Kept as a
+  // non-dead-end rather than returning null, so an unforeseen state still gives
+  // the user a way forward instead of a blank step.
   return (
     <StepCard>
       <div className="flex flex-col gap-4 text-center">
-        <h1 className="font-heading text-2xl font-semibold">{t('onboarding.skip.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('onboarding.skip.body')}</p>
         <StepFooter onBack={onBack} onNext={onNext} nextKey="onboarding.continue" bare />
       </div>
     </StepCard>
@@ -348,8 +349,8 @@ function DoneStep({ onFinish, finishing }: { onFinish: () => void; finishing: bo
 //
 // There is deliberately no Skip button here: it was wired to the same `onNext` as
 // Continue on every step, so it offered no distinct action and only added noise.
-// (The method step's separate "skip" card is a different thing — it routes to the
-// reassurance screen rather than advancing.)
+// (The method step's separate "skip" card is a different thing — it records a
+// method and bypasses the setup step.)
 function StepFooter({
   onBack,
   onNext,
