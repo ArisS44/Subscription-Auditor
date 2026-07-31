@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bell, BellOff, BellRing, Check, Loader2, Share } from 'lucide-react';
+import { Bell, BellOff, Check, Loader2, Share } from 'lucide-react';
 import { useAuth } from '@/features/auth/auth-context';
 import { Button } from '@/components/ui/button';
 import { usePushSubscribe } from '@/hooks/usePushSubscribe';
@@ -210,11 +210,12 @@ export function NotificationOptIn({ bare = false }: { bare?: boolean } = {}) {
   }
 
   return (
+    // No decorative icon here: the button below already carries a bell, and a
+    // second one repeats the section heading without adding information. The
+    // Check in the enabled state stays, because it reports status rather than
+    // decorating.
     <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-card p-4">
-      <div className="flex items-start gap-3">
-        <BellRing className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
-        <p className="text-sm text-muted-foreground">{t('notifications.optIn.description')}</p>
-      </div>
+      <p className="text-sm text-muted-foreground">{t('notifications.optIn.description')}</p>
       {enableButton}
       {errorLine}
     </div>
