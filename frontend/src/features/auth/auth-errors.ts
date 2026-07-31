@@ -14,17 +14,26 @@ function isNetworkFailure(error: AuthError): boolean {
   return error.name === 'AuthRetryableFetchError' || !error.status;
 }
 
-function isRateLimit(error: AuthError): boolean {
-  return (
-    error.status === 429 ||
-    error.code === 'over_request_rate_limit' ||
-    error.code === 'over_email_send_rate_limit'
-  );
+/** The three rate limits are told apart because the wait they imply differs by
+ *  orders of magnitude. Collapsing them onto one "wait a minute" message is a lie
+ *  for the email limit, which is hourly: the user retries in a minute, fails
+ *  again, and concludes the app is broken. */
+function rateLimitKey(error: AuthError): string | null {
+  // Hourly, and counted per address rather than per attempt — retrying sooner
+  // cannot succeed, so the copy must not suggest it.
+  if (error.code === 'over_email_send_rate_limit') return 'auth.errors.emailRateLimited';
+  // Per-minute request throttle: waiting a minute genuinely does clear it.
+  if (error.code === 'over_request_rate_limit') return 'auth.errors.rateLimited';
+  // A bare 429 with no code — we know a limit was hit but not which one, so the
+  // message stays non-committal about how long the wait is.
+  if (error.status === 429) return 'auth.errors.tooManyRequests';
+  return null;
 }
 
 export function signInErrorKey(error: AuthError): string {
   if (isNetworkFailure(error)) return 'auth.errors.network';
-  if (isRateLimit(error)) return 'auth.errors.rateLimited';
+  const limit = rateLimitKey(error);
+  if (limit) return limit;
   if (error.code === 'email_not_confirmed') return 'auth.errors.emailNotConfirmed';
   // Everything else, including invalid_credentials and an unknown email, collapses
   // into one generic message on purpose.
@@ -37,7 +46,8 @@ export function signInErrorKey(error: AuthError): string {
  *  user off requesting another link when the real problem was the password. */
 export function updatePasswordErrorKey(error: AuthError): string {
   if (isNetworkFailure(error)) return 'auth.errors.network';
-  if (isRateLimit(error)) return 'auth.errors.rateLimited';
+  const limit = rateLimitKey(error);
+  if (limit) return limit;
   if (error.code === 'weak_password') return 'auth.errors.weakPassword';
   if (error.code === 'same_password') return 'auth.errors.samePassword';
   // Anything else is most likely an expired or already-used recovery link.
@@ -46,7 +56,8 @@ export function updatePasswordErrorKey(error: AuthError): string {
 
 export function signUpErrorKey(error: AuthError): string {
   if (isNetworkFailure(error)) return 'auth.errors.network';
-  if (isRateLimit(error)) return 'auth.errors.rateLimited';
+  const limit = rateLimitKey(error);
+  if (limit) return limit;
   // The server's own policy rejected it — the client policy is out of step, so say
   // what the server said rather than pretending the form was fine.
   if (error.code === 'weak_password') return 'auth.errors.weakPassword';

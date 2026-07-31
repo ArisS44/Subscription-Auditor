@@ -59,11 +59,40 @@ describe('useOnboarding navigation', () => {
   it('resumes from the persisted step on a fresh mount', () => {
     const first = render();
     act(() => first.result.current.goNext());
-    act(() => first.result.current.goNext());
+    // Through the method step the way the UI actually goes through it — by
+    // choosing. Walking past it with a bare goNext leaves the method null, and
+    // setup has no content without one.
+    act(() => first.result.current.chooseMethod('manual'));
     first.unmount();
 
     const second = render();
     expect(second.result.current.step).toBe('setup');
+    expect(second.result.current.method).toBe('manual');
+  });
+
+  it('bypasses the setup step in both directions when the user skips', () => {
+    const { result } = render();
+    act(() => result.current.goNext()); // -> method
+    act(() => result.current.chooseMethod('skip'));
+
+    // Setup only ever held a slide restating the skip option, so it is stepped
+    // over rather than shown empty.
+    expect(result.current.step).toBe('extension');
+
+    act(() => result.current.goBack());
+    expect(result.current.step).toBe('method');
+  });
+
+  it('counts only the steps a skipping user will see in the progress rail', () => {
+    const { result } = render();
+    // Before a choice is made the full path is still possible, so the rail must
+    // not shrink yet.
+    expect(result.current.railCount).toBe(result.current.stepCount);
+
+    act(() => result.current.goNext());
+    act(() => result.current.chooseMethod('skip'));
+    expect(result.current.railCount).toBe(result.current.stepCount - 1);
+    expect(result.current.railIndex).toBe(2);
   });
 
   it('complete() PATCHes onboarding_completed and clears local progress', async () => {

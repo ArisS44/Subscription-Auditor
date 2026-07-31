@@ -45,8 +45,8 @@
       "title": "How would you like to start?",
       "body": "Add your first subscriptions in whichever way suits you.",
       "chat": {
-        "title": "Chat with Apollon",
-        "body": "Tell the assistant what you're subscribed to and it adds them for you."
+        "title": "Add them by chatting",
+        "body": "Tell Apollon, the built-in assistant, what you're subscribed to and it adds them for you."
       },
       "manual": {
         "title": "Add one manually",
@@ -61,10 +61,6 @@
       "title": "Add a subscription",
       "body": "Add your first subscription now, or continue and do it later.",
       "add": "Add subscription"
-    },
-    "skip": {
-      "title": "No problem",
-      "body": "You can add subscriptions anytime from the dashboard or by chatting with Apollon."
     },
     "extension": {
       "title": "Browser extension",
@@ -466,7 +462,7 @@
     "passwordPolicy": {
       "length": "At least 8 characters",
       "letter": "At least one letter",
-      "number": "At least one number",
+      "number": "At least one digit",
       "met": "requirement met",
       "notMet": "requirement not met"
     },
@@ -479,7 +475,9 @@
       "network": "Couldn't reach the server. Check your connection and try again.",
       "weakPassword": "That password doesn't meet the requirements. Choose a stronger one.",
       "samePassword": "That's already your current password. Choose a different one.",
-      "maybeExistingAccount": "Couldn't create the account. If you already have one, log in or reset your password."
+      "maybeExistingAccount": "Couldn't create the account. If you already have one, log in or reset your password.",
+      "emailRateLimited": "Too many confirmation emails have gone to this address in the past hour. Try again later, and check your spam folder in case an earlier one arrived.",
+      "tooManyRequests": "Too many requests. Wait a little and try again."
     },
     "login": {
       "title": "Log in",
@@ -497,7 +495,7 @@
       "loginCta": "Log in",
       "error": "Could not create your account. Please try again.",
       "checkEmailTitle": "Check your email",
-      "checkEmailBody": "We sent a confirmation link to {{email}}. Confirm your email to finish signing up."
+      "checkEmailBody": "We sent a confirmation link to {{email}}. Confirm your email to finish signing up. If it's not in your inbox, check your spam folder."
     },
     "forgotPassword": {
       "title": "Reset your password",

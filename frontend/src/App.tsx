@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/features/auth/AuthProvider';
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute';
@@ -10,8 +10,6 @@ import { SubscriptionsPage } from '@/features/dashboard/pages/SubscriptionsPage'
 import { SubscriptionDetailPage } from '@/features/dashboard/pages/SubscriptionDetailPage';
 import { SettingsPage } from '@/features/dashboard/pages/SettingsPage';
 import { ChatPage } from '@/features/dashboard/pages/ChatPage';
-import { ComingSoonPage } from '@/features/dashboard/pages/ComingSoonPage';
-import { BarChart3 } from 'lucide-react';
 import Landing from '@/routes/Landing';
 import Login from '@/routes/auth/Login';
 import Signup from '@/routes/auth/Signup';
@@ -58,16 +56,11 @@ function App() {
               <Route index element={<OverviewPage />} />
               <Route path="subscriptions" element={<SubscriptionsPage />} />
               <Route path="subscriptions/:id" element={<SubscriptionDetailPage />} />
-              <Route
-                path="reports"
-                element={
-                  <ComingSoonPage
-                    icon={BarChart3}
-                    titleKey="dashboard.nav.reports"
-                    bodyKey="dashboard.comingSoon.reports"
-                  />
-                }
-              />
+              {/* Reports is shown in the nav as a disabled "coming soon" tab
+                  with no destination. The path is kept only to redirect: a
+                  bookmarked or hand-typed /dashboard/reports lands on Overview
+                  instead of rendering the shell around an empty content area. */}
+              <Route path="reports" element={<Navigate to="/dashboard" replace />} />
               <Route path="chat" element={<ChatPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>

@@ -74,37 +74,76 @@ export function DashboardSidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-2 py-2">
-        {NAV_ITEMS.map(({ to, labelKey, icon: Icon, end, placeholder }) => (
-          <NavLink
-            key={to || 'index'}
-            to={to}
-            end={end}
-            // title doubles as the hover tooltip when collapsed, where the text
-            // label is hidden.
-            title={t(labelKey)}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-2.5 rounded-lg py-2 text-sm font-medium transition-colors',
-                collapsed ? 'justify-center px-0' : 'px-3',
-                isActive
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
-              )
-            }
-          >
-            <Icon className="size-4 shrink-0" aria-hidden />
-            {!collapsed && (
-              <>
-                <span className="flex-1">{t(labelKey)}</span>
-                {placeholder && (
-                  <Badge variant="outline" className="text-[10px]">
-                    {t('dashboard.comingSoon.badge')}
-                  </Badge>
-                )}
-              </>
-            )}
-          </NavLink>
-        ))}
+        {NAV_ITEMS.map(({ to, labelKey, icon: Icon, end, placeholder }) => {
+          // Shared between the real links and the placeholder rows so the two
+          // stay dimensionally identical — only the interaction states differ.
+          const rowClass = cn(
+            'flex items-center gap-2.5 rounded-lg py-2 text-sm font-medium transition-colors',
+            collapsed ? 'justify-center px-0' : 'px-3',
+          );
+          // title doubles as the hover tooltip when collapsed, where the text
+          // label is hidden — and it is the only thing carrying "coming soon"
+          // for a collapsed placeholder row.
+          const title = placeholder
+            ? `${t(labelKey)} — ${t('dashboard.comingSoon.badge')}`
+            : t(labelKey);
+
+          const contents = (
+            <>
+              <Icon className="size-4 shrink-0" aria-hidden />
+              {!collapsed && (
+                <>
+                  <span className="flex-1">{t(labelKey)}</span>
+                  {placeholder && (
+                    // h-[18px] + leading-none: the badge's default h-5 with the
+                    // row's inherited 20px line-height left the 10px label in a
+                    // line box taller than the pill's content area, so it read
+                    // as vertically off-centre and clipped.
+                    <Badge
+                      variant="outline"
+                      className="h-[18px] px-1.5 text-[10px] leading-none text-muted-foreground"
+                    >
+                      {t('dashboard.comingSoon.badge')}
+                    </Badge>
+                  )}
+                </>
+              )}
+            </>
+          );
+
+          // A placeholder tab has no destination, so it is deliberately not a
+          // link: no href, not focusable, and announced as disabled. Rendering
+          // it as an inert element (rather than a link with preventDefault) is
+          // what actually makes it unclickable for mouse, keyboard and screen
+          // reader alike.
+          return placeholder ? (
+            <div
+              key={to || 'index'}
+              aria-disabled="true"
+              title={title}
+              className={cn(rowClass, 'cursor-default text-muted-foreground/55 select-none')}
+            >
+              {contents}
+            </div>
+          ) : (
+            <NavLink
+              key={to || 'index'}
+              to={to}
+              end={end}
+              title={title}
+              className={({ isActive }) =>
+                cn(
+                  rowClass,
+                  isActive
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                )
+              }
+            >
+              {contents}
+            </NavLink>
+          );
+        })}
       </nav>
 
       <div className="flex flex-col gap-1 border-t border-border px-2 py-2">
