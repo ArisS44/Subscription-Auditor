@@ -48,7 +48,9 @@ function makeFetch() {
     const method = (init?.method ?? 'GET').toUpperCase();
     calls.push({ url: u, method, body: init?.body as string | undefined });
     if (u.includes('/push/subscriptions') && method === 'GET') return jsonResponse(devices);
-    if (u.includes('/push/subscribe/') && method === 'DELETE') {
+    // Matches the query-param form (`/push/subscribe?endpoint=…`); the endpoint
+    // must not be nested in the path — see useRevokePushDevice for why.
+    if (u.includes('/push/subscribe?endpoint=') && method === 'DELETE') {
       devices = [];
       return new Response(null, { status: 204 });
     }

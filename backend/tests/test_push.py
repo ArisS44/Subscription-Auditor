@@ -1,5 +1,3 @@
-from urllib.parse import quote
-
 import pytest
 from pywebpush import WebPushException
 
@@ -97,19 +95,22 @@ def test_unsubscribe_removes_row(test_client, user_a):
     endpoint = "https://push.example.com/device-1"
     test_client.post(f"{BASE}/subscribe", headers=_auth(token), json=_sub_body(endpoint))
 
-    r = test_client.delete(f"{BASE}/subscribe/{quote(endpoint, safe='')}", headers=_auth(token))
+    r = test_client.delete(f"{BASE}/subscribe", params={"endpoint": endpoint}, headers=_auth(token))
     assert r.status_code == 204
 
     # A second delete finds nothing → 404 (existence not leaked, same as a
     # never-existent endpoint).
-    again = test_client.delete(f"{BASE}/subscribe/{quote(endpoint, safe='')}", headers=_auth(token))
+    again = test_client.delete(
+        f"{BASE}/subscribe", params={"endpoint": endpoint}, headers=_auth(token)
+    )
     assert again.status_code == 404
 
 
 def test_unsubscribe_unknown_endpoint_is_404(test_client, user_a):
     _, token = user_a
     r = test_client.delete(
-        f"{BASE}/subscribe/{quote('https://push.example.com/never', safe='')}",
+        f"{BASE}/subscribe",
+        params={"endpoint": "https://push.example.com/never"},
         headers=_auth(token),
     )
     assert r.status_code == 404
@@ -182,7 +183,7 @@ def test_subscribe_list_revoke_round_trip(test_client, user_a):
 
     assert (
         test_client.delete(
-            f"{BASE}/subscribe/{quote(endpoint, safe='')}", headers=_auth(token)
+            f"{BASE}/subscribe", params={"endpoint": endpoint}, headers=_auth(token)
         ).status_code
         == 204
     )

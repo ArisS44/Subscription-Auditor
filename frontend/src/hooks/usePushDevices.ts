@@ -31,19 +31,25 @@ export function usePushDevices(accessToken: string | undefined) {
   });
 }
 
-/** Revoke a device by its endpoint. The endpoint is a URL, so it is URL-encoded
- *  into the path. On success the list is invalidated and refetched — revocation
- *  must be confirmed server-side, never merely hidden locally. */
+/** Revoke a device by its endpoint. The endpoint is a URL, so it travels as a
+ *  QUERY parameter rather than inside the path: the production ingress (Envoy,
+ *  in front of Azure Container Apps) normalizes percent-encoded and duplicate
+ *  slashes in paths, so a URL nested in the path arrived mangled and matched no
+ *  stored row — revocation returned 404 in production while passing locally.
+ *  On success the list is invalidated and refetched — revocation must be
+ *  confirmed server-side, never merely hidden locally. */
 export function useRevokePushDevice(accessToken: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (endpoint: string): Promise<void> => {
-      const response = await apiFetch(`/push/subscribe/${encodeURIComponent(endpoint)}`, {
+      const response = await apiFetch(`/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`, {
         accessToken,
         method: 'DELETE',
       });
       // 204 on success; 404 means it was already gone — treat as success so the
-      // list simply reconciles.
+      // list simply reconciles. Note this tolerance is why the ingress defect
+      // above was silent rather than loud: a 404 resolved the mutation, the list
+      // refetched unchanged, and the UI showed nothing at all.
       if (!response.ok && response.status !== 404) {
         throw new Error(`Failed to revoke device: ${response.status}`);
       }

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.config import settings
 from app.deps import get_current_claims
@@ -49,12 +49,22 @@ async def list_devices(claims: Claims) -> list[PushSubscriptionResponse]:
     return [PushSubscriptionResponse(**row) for row in rows]
 
 
-@router.delete("/subscribe/{endpoint:path}", status_code=status.HTTP_204_NO_CONTENT)
-async def unsubscribe(endpoint: str, claims: Claims) -> None:
-    # The endpoint is a URL captured as a path parameter (`:path` so its slashes
-    # survive). It is matched exactly against the caller's stored rows and is never
-    # fetched. RLS scopes the delete to the caller, so one user cannot unsubscribe
-    # another's device.
+@router.delete("/subscribe", status_code=status.HTTP_204_NO_CONTENT)
+async def unsubscribe(
+    endpoint: Annotated[str, Query(min_length=1, max_length=2048)], claims: Claims
+) -> None:
+    # The endpoint is a URL, and it is carried as a QUERY parameter rather than in
+    # the path. A URL nested inside a URL path does not survive the production
+    # ingress: Azure Container Apps fronts the app with Envoy, which normalizes
+    # percent-encoded and duplicate slashes before routing, so `%2F%2F` arrives
+    # collapsed and the value no longer matches any stored row. That made revocation
+    # return 404 in production while working locally against uvicorn, where no such
+    # normalization happens - a defect no test could catch outside a real deploy.
+    # Query strings are not path-normalized, so the value arrives byte-exact.
+    #
+    # It is matched exactly against the caller's stored rows and is never fetched.
+    # RLS scopes the delete to the caller, so one user cannot unsubscribe another's
+    # device.
     try:
         await svc.unsubscribe(claims, endpoint)
     except PushSubscriptionNotFoundError as err:
