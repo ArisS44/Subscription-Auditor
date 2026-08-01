@@ -943,3 +943,43 @@ service-role function in `db/reminders.py` — which was the genuinely unbounded
 function would have looked complete while leaving the externally-triggerable path unbounded. When a rule is
 justified by *where code runs*, verify where it actually runs before applying it. Look here: the two
 `_MAX_DEVICES_*` constants, duplicated on purpose across `db/push.py` and `db/reminders.py`.
+
+---
+
+## Session 5 — Advancing renewal dates (2026-08-01)
+
+### A stored derived value needs something to maintain it, or it silently rots
+`next_renewal_date` was computed correctly at create and update, and nothing was wrong with the
+calculation — the bug was that *nothing recomputed it as time passed*. Because the reminder due-query
+filters `next_renewal_date >= CURRENT_DATE`, a date slipping into yesterday removed that subscription from
+the scan permanently: one reminder per subscription, ever, then silence with no error to notice. Any value
+derived from "now" is really a cache of a moment, and needs either a maintainer (a scheduled job) or to be
+computed on read. Computing on read was rejected here because the reminder ledger keys on `due_date`, so it
+must be a stable stored value. A database trigger cannot help either — triggers fire when a row is written,
+and the event here is the passage of time, which no write accompanies. Look here:
+`advance_past_renewal_dates` in `backend/app/services/reminders.py`.
+
+### Ordering two steps in a job is a correctness decision, not a style one
+Advancing stale dates *before* detecting what is due, or after, are not equivalent. Advancing first risks
+skipping a reminder; advancing second costs a day of latency. What makes "first" safe is a strict boundary:
+only dates **strictly** in the past are touched, so a renewal falling *today* — still live for today's
+reminder, since the due-query accepts `>= CURRENT_DATE` — is left alone. With that, advancing first cannot
+lose anything, because a past date was already excluded from detection. It also cannot double-send, since a
+new date is a new ledger key. When two steps in a pipeline touch the same rows, write down what each
+ordering would break before choosing. Look here: the ordering comment in `run_due_reminders`.
+
+### A guarantee enforced in two places needs both broken to test it
+The first sabotage attempt widened the today-boundary in the read query and the test stayed green — because
+the write statement re-asserts the same condition, so the behaviour was still correct. That is good design
+(the write does not trust the read's selection, which also makes it safe to race), but it means a sabotage
+check that breaks only one wall proves nothing. Break every wall the guarantee rests on, or the green result
+is measuring the wall you left standing. Look here: the matching `next_renewal_date < CURRENT_DATE` in both
+`get_subscriptions_with_past_renewal` and `apply_renewal_date_advances`.
+
+### Testing a global job means restoring what it touched
+The advance runs across all users, so a test that invokes it rewrites the developer's own overdue
+subscriptions on shared dev — permanently, and invisibly. The fixture snapshots `next_renewal_date` for
+every row the advance could move and puts it back afterwards, mirroring the existing `isolate_deliveries`.
+Same rule as before: a globally-scoped job needs its blast radius restored, and assertions must be about a
+specific test row rather than global counts. Look here: `isolate_renewal_dates` in
+`backend/tests/test_reminders.py`.
