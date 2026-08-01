@@ -213,6 +213,7 @@
         "name": "Name",
         "category": "Category",
         "price": "Price",
+        "pricePlaceholder": "0.00",
         "currency": "Currency",
         "billingCycle": "Billing cycle",
         "startDate": "Start date",
