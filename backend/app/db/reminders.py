@@ -19,6 +19,73 @@ import asyncpg
 _MAX_DEVICES_PER_USER = 100
 
 
+async def get_subscriptions_with_past_renewal(
+    conn: asyncpg.Connection, *, limit: int
+) -> list[asyncpg.Record]:
+    """Active subscriptions whose stored renewal date has already gone by.
+
+    Strictly `< CURRENT_DATE`, never `<=`. A subscription renewing *today* is
+    still live for today's reminder — the due-query accepts `>= CURRENT_DATE` —
+    and advancing it here would push it a whole cycle out and silently skip that
+    reminder. That off-by-one is the entire hazard in advancing before detection.
+
+    Only `status = 'active'`: cancelled and paused subscriptions are not billing,
+    so moving their date forward would assert a future charge that is not coming.
+    They stay excluded from reminders regardless, by the due-query's own filter.
+
+    Oldest first and LIMITed, so a run that cannot clear the whole backlog makes
+    deterministic forward progress instead of revisiting the same rows.
+    """
+    return await conn.fetch(
+        """
+        SELECT id, next_renewal_date, billing_cycle
+        FROM subscriptions
+        WHERE status = 'active'
+          AND next_renewal_date IS NOT NULL
+          AND next_renewal_date < CURRENT_DATE
+        ORDER BY next_renewal_date ASC, id ASC
+        LIMIT $1
+        """,
+        limit,
+    )
+
+
+async def apply_renewal_date_advances(
+    conn: asyncpg.Connection, advances: list[tuple[object, object]]
+) -> int:
+    """Write the recomputed renewal dates back, as one statement. Returns the
+    number of rows actually changed.
+
+    `advances` is (subscription_id, new_next_renewal_date). The WHERE re-asserts
+    both conditions the read selected on, so a row that stopped being eligible
+    between the read and this write — cancelled or paused in the meantime, or
+    already advanced by a concurrent run — is left alone rather than overwritten.
+    That makes the write safe to repeat and safe to race.
+
+    One round-trip via unnest rather than a statement per row: this is a job path,
+    and the row count is bounded by the caller's limit, not by anything a single
+    user controls.
+    """
+    if not advances:
+        return 0
+    ids = [a[0] for a in advances]
+    dates = [a[1] for a in advances]
+    result = await conn.execute(
+        """
+        UPDATE subscriptions AS s
+        SET next_renewal_date = v.new_date, updated_at = now()
+        FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::date[]) AS new_date) AS v
+        WHERE s.id = v.id
+          AND s.status = 'active'
+          AND s.next_renewal_date < CURRENT_DATE
+        """,
+        ids,
+        dates,
+    )
+    # asyncpg returns the command tag, e.g. "UPDATE 3".
+    return int(result.split()[-1])
+
+
 async def get_due_reminders(conn: asyncpg.Connection, *, limit: int) -> list[asyncpg.Record]:
     """Active subscriptions whose renewal falls inside their effective lead window
     and have not already been reminded for this renewal.
