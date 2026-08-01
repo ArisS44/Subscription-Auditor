@@ -1,5 +1,6 @@
+import re
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -9,6 +10,7 @@ from app.db import reminders as reminders_db
 from app.db.pool import get_pool
 from app.services import reminders as engine
 from app.services.notifications_copy import render_renewal_reminder, resolve_language
+from app.services.subscription import compute_next_renewal_date
 
 BASE = "/api/v1/jobs"
 
@@ -316,7 +318,16 @@ def test_run_due_accepts_correct_token(test_client, monkeypatch):
     monkeypatch.setattr("app.routers.jobs.run_due_reminders", _noop)
     r = test_client.post(f"{BASE}/run-due", headers={"X-Job-Token": "the-real-secret-token"})
     assert r.status_code == 200
-    assert r.json() == {"due": 0, "sent": 0, "skipped_already_sent": 0, "pruned": 0, "failed": 0}
+    # `advanced` reports the renewal dates rolled forward this run. It defaults to
+    # 0 so existing constructors still work, but it is part of the response shape.
+    assert r.json() == {
+        "advanced": 0,
+        "due": 0,
+        "sent": 0,
+        "skipped_already_sent": 0,
+        "pruned": 0,
+        "failed": 0,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -365,3 +376,191 @@ async def test_job_device_fanout_keeps_a_deterministic_order(db_pool, user_a, mo
         ]
     assert first == second
     assert first == ["https://push.example.com/ordered-0", "https://push.example.com/ordered-1"]
+
+
+# --------------------------------------------------------------------------
+# Rolling renewal dates forward.
+#
+# `next_renewal_date` was written once at create/update and never again, so the
+# moment a renewal passed, the due-query's `>= CURRENT_DATE` filter dropped that
+# subscription permanently — one reminder per subscription, ever, then silence.
+#
+# The advance is global, like the rest of the job, so `isolate_renewal_dates`
+# snapshots and restores every row it could touch. Without it these tests would
+# permanently rewrite the developer's own overdue subscriptions on shared dev.
+# --------------------------------------------------------------------------
+@pytest.fixture
+async def isolate_renewal_dates(db_pool) -> AsyncIterator[None]:
+    """Restore next_renewal_date for every row the global advance could move."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        before = [
+            (r["id"], r["next_renewal_date"])
+            for r in await conn.fetch(
+                "SELECT id, next_renewal_date FROM subscriptions "
+                "WHERE status = 'active' AND next_renewal_date < CURRENT_DATE"
+            )
+        ]
+    yield
+    if before:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE subscriptions AS s SET next_renewal_date = v.d
+                FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::date[]) AS d) AS v
+                WHERE s.id = v.id
+                """,
+                [b[0] for b in before],
+                [b[1] for b in before],
+            )
+
+
+async def _run_advance() -> int:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        return await engine.advance_past_renewal_dates(conn)
+
+
+async def _renewal_date(sub_id: str) -> date:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        return await conn.fetchval(
+            "SELECT next_renewal_date FROM subscriptions WHERE id = $1::uuid", sub_id
+        )
+
+
+async def test_past_renewal_date_is_advanced_to_the_next_future_date(
+    db_pool, user_a, isolate_renewal_dates
+):
+    uid, _ = user_a
+    sub_id = await _insert_subscription(user_id=uid, renewal_offset_days=-5)
+    stale = await _renewal_date(sub_id)
+    assert stale < date.today(), "precondition: the subscription starts overdue"
+
+    await _run_advance()
+
+    rolled = await _renewal_date(sub_id)
+    assert rolled > date.today(), "the stored date is still in the past"
+    assert rolled == compute_next_renewal_date(stale, "monthly", date.today())
+
+
+async def test_several_elapsed_cycles_advance_in_one_step(db_pool, user_a, isolate_renewal_dates):
+    """A subscription unvisited for months must land on its next *future* date, not
+    creep one cycle per run — otherwise a lapsed yearly subscription would need a
+    year of daily runs to catch up."""
+    uid, _ = user_a
+    sub_id = await _insert_subscription(user_id=uid, renewal_offset_days=-100)
+    stale = await _renewal_date(sub_id)
+
+    await _run_advance()
+    rolled = await _renewal_date(sub_id)
+
+    assert rolled > date.today()
+    # One monthly step from the stale date would still be in the past — proving
+    # the helper walked multiple cycles rather than adding a single one.
+    one_step = compute_next_renewal_date(stale, "monthly", stale)
+    assert one_step < date.today()
+    # And it did not overshoot: the result is within one cycle of today.
+    assert (rolled - date.today()).days <= 31
+
+
+async def test_a_renewal_falling_today_is_not_advanced(db_pool, user_a, isolate_renewal_dates):
+    """The whole hazard of advancing before due-detection. A renewal dated today is
+    still live for today's reminder (the due-query accepts `>= CURRENT_DATE`), so
+    moving it would silently skip that reminder entirely."""
+    uid, _ = user_a
+    sub_id = await _insert_subscription(user_id=uid, renewal_offset_days=0)
+    assert await _renewal_date(sub_id) == date.today()
+
+    await _run_advance()
+
+    assert await _renewal_date(sub_id) == date.today(), "today's renewal was advanced away"
+
+
+async def test_running_the_advance_twice_does_not_skip_a_cycle(
+    db_pool, user_a, isolate_renewal_dates
+):
+    """External triggers get retried and re-dispatched; a second run in the same
+    day must be a no-op, not another cycle forward."""
+    uid, _ = user_a
+    sub_id = await _insert_subscription(user_id=uid, renewal_offset_days=-5)
+
+    await _run_advance()
+    after_first = await _renewal_date(sub_id)
+    await _run_advance()
+    after_second = await _renewal_date(sub_id)
+
+    assert after_first == after_second
+
+
+@pytest.mark.parametrize("bad_status", ["cancelled", "paused"])
+async def test_inactive_subscriptions_are_never_advanced(
+    db_pool, user_a, isolate_renewal_dates, bad_status
+):
+    """Neither is billing, so moving the date would assert a future charge that is
+    not coming. They remain suppressed from reminders regardless."""
+    uid, _ = user_a
+    sub_id = await _insert_subscription(user_id=uid, renewal_offset_days=-5, status=bad_status)
+    stale = await _renewal_date(sub_id)
+
+    await _run_advance()
+
+    assert await _renewal_date(sub_id) == stale
+    assert sub_id not in await _due_ids()
+
+
+async def test_advanced_subscription_earns_a_new_reminder_while_the_old_one_stays_claimed(
+    db_pool, user_a, isolate_renewal_dates, isolate_deliveries
+):
+    """The case the ledger key was designed for. Advancing yields a different
+    due_date, which legitimately earns its own reminder, while the existing row
+    still prevents re-sending the old one."""
+    uid, _ = user_a
+    await _set_profile_lead(uid, 30)
+    sub_id = await _insert_subscription(user_id=uid, renewal_offset_days=-1, lead_days=30)
+    stale = await _renewal_date(sub_id)
+
+    # Simulate the reminder that already went out for the now-past date.
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        assert await reminders_db.claim_delivery(
+            conn, user_id=uid, subscription_id=sub_id, due_date=stale
+        )
+
+    await _run_advance()
+    rolled = await _renewal_date(sub_id)
+    assert rolled > date.today()
+
+    # Back in the due set — for the NEW date, which is what the job will claim.
+    assert sub_id in await _due_ids()
+
+    async with pool.acquire() as conn:
+        # The new date is claimable: a different key, so a legitimate new reminder.
+        assert await reminders_db.claim_delivery(
+            conn, user_id=uid, subscription_id=sub_id, due_date=rolled
+        )
+        # The old date is still claimed, so it can never be re-sent.
+        assert not await reminders_db.claim_delivery(
+            conn, user_id=uid, subscription_id=sub_id, due_date=stale
+        )
+
+
+async def test_every_billing_cycle_the_schema_allows_is_handled(db_pool):
+    """Anti-drift: the DB CHECK on billing_cycle and the renewal calculation must
+    agree. Adding a cycle to the constraint without teaching the helper would make
+    the job raise mid-run for every user, so this reads the allowed values out of
+    the live constraint rather than restating them."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        definition = await conn.fetchval("""
+            SELECT pg_get_constraintdef(con.oid) FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            WHERE rel.relname = 'subscriptions' AND con.contype = 'c'
+              AND pg_get_constraintdef(con.oid) LIKE '%billing_cycle%'
+            """)
+    cycles = re.findall(r"'([a-z]+)'::text", definition)
+    assert set(cycles) == {"weekly", "monthly", "quarterly", "yearly"}, cycles
+    today = date.today()
+    for cycle in cycles:
+        result = compute_next_renewal_date(today - timedelta(days=400), cycle, today)
+        assert result > today, f"{cycle} did not produce a future date"

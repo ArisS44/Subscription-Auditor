@@ -1,4 +1,7 @@
 import logging
+from datetime import date
+
+import asyncpg
 
 from app.config import settings
 from app.db import reminders as reminders_db
@@ -6,6 +9,7 @@ from app.db.pool import get_pool
 from app.models.jobs import JobRunResult
 from app.services import notifications_copy
 from app.services.push import DeliveryOutcome, channel
+from app.services.subscription import compute_next_renewal_date
 
 logger = logging.getLogger("app.services.reminders")
 
@@ -19,6 +23,42 @@ logger = logging.getLogger("app.services.reminders")
 # around the same mechanism-only channel.send.
 
 
+async def advance_past_renewal_dates(conn: asyncpg.Connection) -> int:
+    """Roll every active subscription whose renewal date has gone by forward to its
+    next future occurrence. Returns how many were advanced.
+
+    Without this, `next_renewal_date` is computed once at create/update and never
+    again, so the moment a renewal passes, the due-query's `>= CURRENT_DATE` filter
+    drops that subscription permanently: every subscription would get exactly one
+    reminder in its lifetime and then go quiet, with no error anywhere.
+
+    The date is recomputed with `compute_next_renewal_date` — the same helper the
+    create and update paths use — so there is only ever one renewal calculation in
+    the codebase to get wrong.
+
+    Anchored on the *stored* renewal date rather than `start_date`. Both agree for
+    an untouched subscription, but `update_subscription` lets a user set a renewal
+    date explicitly, and re-deriving from `start_date` would silently discard that
+    choice. The helper advances by whole cycles until strictly after today, so a
+    subscription several cycles behind lands on the correct future date in one
+    step rather than creeping forward one cycle per daily run.
+    """
+    rows = await reminders_db.get_subscriptions_with_past_renewal(
+        conn, limit=settings.reminder_job_batch_size
+    )
+    if not rows:
+        return 0
+    today = date.today()
+    advances = [
+        (
+            row["id"],
+            compute_next_renewal_date(row["next_renewal_date"], row["billing_cycle"], today),
+        )
+        for row in rows
+    ]
+    return await reminders_db.apply_renewal_date_advances(conn, advances)
+
+
 async def run_due_reminders() -> JobRunResult:
     """Find due renewal reminders across all users, claim each in the ledger before
     sending (so a re-run cannot double-send), render bilingual copy, and fan out to
@@ -28,6 +68,24 @@ async def run_due_reminders() -> JobRunResult:
     pool = get_pool()
 
     async with pool.acquire() as conn:
+        # Advance stale renewal dates BEFORE detecting what is due, so a
+        # subscription that went stale is reconsidered in this same run rather
+        # than waiting for tomorrow's. This ordering is safe in both directions:
+        #
+        #   - It cannot skip a reminder. Only dates strictly in the past are
+        #     touched, and a past date was already excluded from the due-query, so
+        #     moving it forward removes nothing that would have been found. A
+        #     subscription renewing *today* is deliberately left alone.
+        #   - It cannot double-send. Advancing produces a different date, and the
+        #     ledger is keyed on (user, subscription, kind, due_date) — so the new
+        #     date legitimately earns its own reminder while the existing row still
+        #     blocks the old one. This is the case that key was designed for.
+        #
+        # Advancing *after* detection would also be correct but costs a day: a
+        # subscription going stale today would not be reconsidered until the next
+        # run, which for a short billing cycle can mean a late reminder.
+        advanced = await advance_past_renewal_dates(conn)
+
         rows = await reminders_db.get_due_reminders(conn, limit=settings.reminder_job_batch_size)
         due = len(rows)
 
@@ -92,7 +150,8 @@ async def run_due_reminders() -> JobRunResult:
 
     # Counts and outcomes only — never a name, endpoint, key, or body.
     logger.info(
-        "run-due complete due=%d sent=%d skipped_already_sent=%d pruned=%d failed=%d",
+        "run-due complete advanced=%d due=%d sent=%d skipped_already_sent=%d pruned=%d failed=%d",
+        advanced,
         due,
         sent,
         skipped,
@@ -100,5 +159,10 @@ async def run_due_reminders() -> JobRunResult:
         failed,
     )
     return JobRunResult(
-        due=due, sent=sent, skipped_already_sent=skipped, pruned=pruned, failed=failed
+        advanced=advanced,
+        due=due,
+        sent=sent,
+        skipped_already_sent=skipped,
+        pruned=pruned,
+        failed=failed,
     )
