@@ -213,6 +213,7 @@
         "name": "Όνομα",
         "category": "Κατηγορία",
         "price": "Τιμή",
+        "pricePlaceholder": "0,00",
         "currency": "Νόμισμα",
         "billingCycle": "Κύκλος χρέωσης",
         "startDate": "Ημερομηνία έναρξης",

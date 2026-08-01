@@ -166,7 +166,10 @@ export function SubscriptionFormDialog({
                 <Input
                   id="sub-price"
                   inputMode="decimal"
-                  placeholder="0.00"
+                  // Locale-keyed: on a Greek device the decimal keypad has no dot
+                  // key, so a hardcoded "0.00" would model a format the user
+                  // cannot type. Both separators are accepted either way.
+                  placeholder={t('subscriptions.form.fields.pricePlaceholder')}
                   {...register('price')}
                 />
                 <FieldError errors={[errors.price]} />

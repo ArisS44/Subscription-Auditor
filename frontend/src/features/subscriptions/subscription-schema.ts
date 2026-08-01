@@ -23,8 +23,26 @@ const NOTES_MAX = 2000;
 const MANAGE_URL_MAX = 2048; // matches _MANAGE_URL_MAX in the backend model
 const PRICE_MAX = 99_999_999.99; // NUMERIC(10,2)
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-// Non-negative, up to 2 decimal places. No leading minus ⇒ negatives rejected.
-const PRICE_RE = /^\d+(\.\d{1,2})?$/;
+// Non-negative, up to 2 decimal places, with either decimal separator. No leading
+// minus ⇒ negatives rejected.
+//
+// The comma is not a convenience. iOS draws the `inputMode="decimal"` keypad with
+// the separator key of the *device* locale, so on a European iPhone that key emits
+// a comma and there is no dot key at all — a dot-only rule asks for a character
+// the user cannot type, and blocks every non-whole price.
+//
+// Exactly one separator is allowed, deliberately. "1.234,56" and "1,234.56" are
+// the same number written two ways and cannot be told apart without knowing the
+// locale; guessing wrong changes a price by a factor of a thousand, so both are
+// rejected rather than interpreted.
+const PRICE_RE = /^\d+([.,]\d{1,2})?$/;
+
+/** Convert a validated price to the dot form the API and the NUMERIC(10,2) column
+ *  require. Safe to call before validation too: it only rewrites the separator, so
+ *  malformed input stays malformed and is still rejected. */
+export function normalisePrice(value: string): string {
+  return value.trim().replace(',', '.');
+}
 
 // Accept only well-formed http(s) URLs — mirrors the backend's AnyHttpUrl check,
 // which rejects other schemes (e.g. javascript:, ftp:). UX-only; the backend
@@ -58,7 +76,10 @@ export function createSubscriptionSchema(t: TFunction) {
       .trim()
       .min(1, e('priceRequired'))
       .regex(PRICE_RE, e('priceInvalid'))
-      .refine((v) => Number(v) <= PRICE_MAX, e('priceTooLarge')),
+      // Normalised before Number(): Number('7,99') is NaN, and every comparison
+      // against NaN is false, so a comma price would fail the ceiling check and
+      // report "price is too large" — a wrong answer with a misleading message.
+      .refine((v) => Number(normalisePrice(v)) <= PRICE_MAX, e('priceTooLarge')),
     // Dropdown is curated (CURRENCIES) for UX, but validation accepts any valid
     // 3-letter uppercase code — matches the backend and keeps an existing row's
     // out-of-list currency editable.
@@ -93,12 +114,14 @@ export type SubscriptionFormValues = z.infer<ReturnType<typeof createSubscriptio
 
 /** Map validated form values to the API create/update payload: drop the empty
  *  sentinels (category '' → null, blank optional fields → omitted/null). Price
- *  stays a string — the API accepts a numeric string for the Decimal. */
+ *  stays a string — the API accepts a numeric string for the Decimal — but is
+ *  normalised to a dot here, the single point every create and edit passes
+ *  through, so no comma can reach the backend by either route. */
 export function formValuesToPayload(values: SubscriptionFormValues): SubscriptionCreateInput {
   return {
     name: values.name.trim(),
     category: values.category === NO_CATEGORY ? null : values.category,
-    price: values.price.trim(),
+    price: normalisePrice(values.price),
     currency: values.currency,
     billing_cycle: values.billing_cycle,
     start_date: values.start_date,
