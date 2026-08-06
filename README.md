@@ -1,138 +1,182 @@
 # SaaS Subscription Auditor
 
-A personal web app that helps you track, analyze, and optimize all your recurring subscriptions — AI tools, streaming, productivity apps, etc.
+A personal web app for tracking, analyzing, and optimizing recurring subscriptions — AI tools,
+streaming, productivity apps. Bilingual (English/Greek), dark-mode dashboard, with an AI assistant
+as the primary interface.
 
-Built as a portfolio project and something you'll actually use daily.
+Built as a portfolio project and for personal daily use. Deployed and in use by a small group of
+beta testers.
+
+*Developed with AI assistance (Claude), coordinated through the
+[Agentic Project Management](https://github.com/sdi2200262/agentic-project-management) framework.
+See [Development Process](#development-process) for how the work was directed and reviewed, and
+[`.apm/`](.apm/archives/README.md) for the full record.*
 
 ---
 
 ## What It Does
 
-- **Chat with an AI assistant** to manage your subscriptions using plain language ("Add Claude Pro, $20/month" or "How much am I spending on AI tools?"). Works in English and Greek.
-- **Dashboard** showing your monthly spend, upcoming renewals, and charts.
-- **Browser extension** that silently tracks how much time you spend on AI tools (Claude, ChatGPT, Gemini, etc.) so you can see cost-per-hour.
-- **Push notifications** reminding you before a subscription renews (default: 3 days before).
-- **Invoice import** — upload a PDF bank statement and the AI extracts your subscriptions automatically.
-- **Monthly reports** with AI-generated insights and suggestions.
+**Built and deployed:**
+
+- **Chat with an AI assistant** to manage subscriptions in plain language — "Add Claude Pro,
+  $20/month", "How much am I spending on AI tools?". Works in English and Greek.
+- **Dashboard** with monthly spend, upcoming renewals, and charts, including multi-currency
+  totals converted at cached FX rates.
+- **Push notifications** before a subscription renews, with a per-user default lead time and a
+  per-subscription override. Delivered via Web Push; the daily check runs as a scheduled job.
+- **Subscription management** — add, edit, pause, cancel, and categorise, from either the UI or
+  the chat.
+- **Cancellation guidance** — the assistant answers "how do I cancel X?" from a curated table of
+  verified services, clearly distinguishing verified steps from unverified model-generated ones.
+
+**Planned, not yet built** — these are on the roadmap and are described in
+[`docs/APM_SESSIONS.md`](docs/APM_SESSIONS.md), but no implementation exists yet:
+
+- **Browser extension** for tracking time spent in subscribed tools. `extension/` currently holds
+  a README only.
+- **Cost-per-hour and usage analytics**, which depend on the extension. The subscription detail
+  view shows explicit placeholders rather than fabricated numbers.
+- **Invoice import** — uploading a PDF statement for automatic extraction.
+- **Monthly reports** with AI-generated insights.
+- **Data export and account deletion.** Row-Level Security is enforced today, but the GDPR
+  export/delete flows are not implemented yet.
 
 ---
 
-## Tech Stack — The Short Version
+## Tech Stack
 
-Think of it in three parts: a frontend the user sees, a backend that does the work, and external services we rely on.
+### Frontend
 
-### Frontend (what the user sees in the browser)
-| What | Tool | Why |
-|---|---|---|
-| UI framework | **React + Vite** | React builds the interactive interface; Vite makes development fast |
-| Language | **TypeScript** | JavaScript with type checking — catches bugs before they happen |
-| Styling | **Tailwind CSS** | Utility classes applied directly in HTML — no separate CSS files |
-| Component library | **shadcn/ui** | Pre-built UI components (buttons, forms, modals) we own and can customize |
-| Charts | **Recharts** | Draws the spend/usage charts |
-| Icons | **lucide-react** | Icon set used throughout the UI |
-| Routing | **React Router v6** | Handles navigation between pages (Overview, Chat, Settings, etc.) |
-| Forms | **React Hook Form + Zod** | Forms with built-in validation |
-| Data fetching | **TanStack Query** | Fetches data from the backend and caches it |
-| Global state | **Zustand** | Lightweight store for shared app state (e.g., current user) |
-| Auth client | **@supabase/supabase-js** | Talks to Supabase Auth for login/logout |
-| Streaming | **EventSource (SSE)** | Receives the AI assistant's response word-by-word as it's generated |
-| Translations | **react-i18next** | Switches UI text between English and Greek |
-
-### Backend (the server that runs the logic)
-| What | Tool | Why |
-|---|---|---|
-| Framework | **FastAPI** | Python web framework — handles API requests and returns responses |
-| Server | **Uvicorn** | Runs FastAPI; handles many requests concurrently |
-| Validation | **Pydantic v2** | Validates and parses all incoming data so nothing unexpected gets in |
-| Database client | **asyncpg / supabase-py** | Talks to the Postgres database |
-| Auth verification | **pyjwt** | Checks that the user's login token is real before serving protected data |
-| AI model client | **groq SDK** | Sends messages to Llama 3.3 (the AI model) and receives responses |
-| PDF reading | **pdfplumber** | Extracts text from uploaded bank statement PDFs |
-| OCR fallback | **pytesseract** | Used when a PDF is image-based and pdfplumber can't extract text |
-| Push notifications | **pywebpush** | Sends browser push notifications for renewal reminders |
-| Scheduled jobs | **APScheduler** | Runs tasks on a schedule (e.g., check renewals daily, generate monthly reports on the 1st) |
-| Logging | **structlog** | Structured logs that go to Azure Application Insights |
-
-### External Services
-| Service | What it does |
+| Tool | Role in this project |
 |---|---|
-| **Supabase** | Hosts the Postgres database, handles user authentication, and stores uploaded files |
-| **Groq** | Provides the Llama 3.3 70B AI model we use for the chatbot and invoice extraction |
-| **Azure Container Apps** | Hosts the backend (Docker container, scales to zero when idle to save cost) |
-| **Azure Static Web Apps** | Hosts the built frontend (free tier) |
-| **Azure Key Vault** | Stores secrets (API keys, tokens) securely in production |
-| **Azure Application Insights** | Collects logs and performance metrics |
-| **Browser Push Services** | Deliver push notifications (handled via VAPID — a standard that works across browsers) |
+| **React 19 + Vite** | Component tree and dev/build tooling. Function components only |
+| **TypeScript** (`strict`) | Enforced across app and test files; the CI build type-checks tests, which the test runner alone does not |
+| **Tailwind CSS v4** | All styling. Dark mode is the default and primary design target |
+| **shadcn/ui** (Base UI preset) | Component primitives vendored into the repo and owned directly, rather than pulled from a dependency |
+| **TanStack Query** | Every server read and mutation, with cache invalidation on success. No raw `useEffect` + `fetch` anywhere in the app |
+| **React Router v7** | Route tree, including the guard that resolves onboarding *before* the dashboard mounts |
+| **React Hook Form + Zod** | Form state and client validation. Zod is UX-only — the backend re-validates everything |
+| **Recharts** | Spend-over-time, category breakdown, and the chart payloads the assistant can render |
+| **react-i18next** | Runtime EN/EL switching against locale files kept at exact key parity (355 keys) |
+| **marked + DOMPurify** | Renders assistant markdown through a strict tag allowlist. No `dangerouslySetInnerHTML` |
+| **date-fns** | Renewal-date arithmetic and billing-cycle math |
+| **`fetch` + ReadableStream** | Consumes the assistant's SSE token stream. Chosen over `EventSource`, which can neither send an `Authorization` header nor POST a request body — this endpoint needs both |
 
-### Browser Extension
-| What | Tool |
+### Backend
+
+| Tool | Role in this project |
 |---|---|
-| Standard | Manifest V3 (the current Chrome extension format) |
-| Language | TypeScript |
-| Build | Vite |
-| Background logic | Service worker (runs silently, tracks which AI tool tab is active) |
+| **FastAPI** | HTTP layer. Strict `routers/` → `services/` → `db/` layering, no leakage between them |
+| **Uvicorn** | ASGI server, running the app in a container |
+| **Pydantic v2** | Validates every inbound payload, including every LLM tool call before it executes. The backend is the trust boundary |
+| **asyncpg** | Postgres access with a connection pool. Parameterized SQL only; RLS is the second wall |
+| **pyjwt** | Verifies the Supabase JWT via JWKS (ES256) on every protected request ([ADR 0001](docs/adr/0001-jwt-verification-via-jwks-es256.md)) |
+| **httpx** | The provider-agnostic transport for model calls — no vendor SDK ([ADR 0002](docs/adr/0002-provider-agnostic-llm-layer-over-httpx.md)) |
+| **pywebpush** | Encrypts and delivers Web Push payloads to per-device endpoints, and reports permanent rejections so dead devices are pruned |
+| **limits** | Per-user chat rate limiting, per-IP auth limiting, and a per-user daily LLM spend ceiling |
+
+### Infrastructure
+
+| Service | Role in this project |
+|---|---|
+| **Supabase** | Postgres, Auth, and Storage. RLS policies on every user-scoped table, proven by cross-user denial tests |
+| **Google Gemini** | The assistant's model (`gemini-3.1-flash-lite`), reached through the httpx layer |
+| **Azure Container Apps** | Runs the backend container, scaling to zero when idle |
+| **Azure Static Web Apps** | Serves the built frontend and applies the security headers, including the CSP |
+| **Azure Key Vault** | Holds production secrets, referenced by the Container App rather than baked into images |
+| **Azure Application Insights** | Logs and metrics. Counts and outcomes only — never message content or PII |
+| **GitHub Actions** | CI/CD on push, plus the daily cron that triggers the reminder job |
+
+### Choices worth noting
+
+| | |
+|---|---|
+| **httpx, not a vendor SDK** | The LLM layer is provider-agnostic ([ADR 0002](docs/adr/0002-provider-agnostic-llm-layer-over-httpx.md)). It survived a Groq → Gemini migration without touching callers; Groq remains a documented fallback adapter |
+| **Gemini pinned to `gemini-3.1-flash-lite`** | The floating `-latest` alias re-pointed to a new model generation mid-development and changed assistant behaviour with no code change |
+| **asyncpg, not an ORM** | Parameterized SQL throughout, with RLS as the second wall |
+| **Zod is UX-only** | The backend re-validates everything; it is the trust boundary |
+| **marked + DOMPurify** | Assistant output renders through a strict tag allowlist. No `dangerouslySetInnerHTML`, and model-generated URLs are never linkified |
+| **No in-process scheduler** | Scheduled work is triggered externally by GitHub Actions, keeping the backend stateless and horizontally scalable ([ADR 0003](docs/adr/0003-lazy-refresh-fx-cache-no-scheduler.md)) |
+| **Hand-authored service worker** | Rather than a generated one ([ADR 0004](docs/adr/0004-hand-authored-service-worker.md)) |
 
 ---
 
 ## How the AI Assistant Works
 
-The chatbot is one AI model (Llama 3.3 via Groq) with a set of **tools** it can call. The flow each time you send a message:
+The assistant is a single model with a registry of **tools** it can call. No agent framework, no
+multi-agent orchestration. Each message:
 
 ```
 Your message
     ↓
-AI model decides which tools to call (0 or more)
+Model decides which tools to call (0 or more)
     ↓
-Backend runs the tools (e.g., query DB, compute analytics)
+Backend validates each tool payload, then runs it (query DB, compute analytics)
     ↓
-Tool results are fed back to the AI
+Tool results are fed back to the model
     ↓
-AI writes a response → streamed word-by-word to your screen
+Model writes a reply → streamed token-by-token to the screen
 ```
 
-Tools the AI can call include things like `add_subscription`, `query_subscriptions`, `get_analytics`, and `render_chart`. The AI never directly touches the database — it calls tools that do.
-
----
-
-## How the Extension Works
-
-The browser extension runs as a **service worker** (background script) in Chrome. It watches which tab is active and focused, and records time spent on tracked AI tool domains (e.g., `claude.ai`, `chat.openai.com`). Every few minutes it sends a batch of usage events to the backend. The backend links those events to your subscriptions and computes cost-per-hour.
-
-The extension authenticates using a long-lived token you generate in the app's Settings, so you don't have to log in separately.
+Registered tools include `add_subscription`, `query_subscriptions`, `get_analytics`,
+`get_subscription_guide`, `mark_subscription_cancelled`, and `delete_subscription`. **The model
+never touches the database directly** — it calls tools that do, and every tool payload is validated
+against a Pydantic schema before execution. Every figure shown in chat comes from a tool result
+computed against the database, never from text the model produced freely.
 
 ---
 
 ## How Push Notifications Work
 
-The app uses the **Web Push API with VAPID**. This is a browser standard — no third-party push service needed. When you enable notifications:
+The app uses the **Web Push API with VAPID** — a browser standard, with no third-party push
+service. When notifications are enabled:
 
-1. Your browser registers a unique push endpoint with your browser's push service (e.g., Google's for Chrome).
-2. That endpoint is saved in the backend.
-3. When a renewal is due (or it's the 1st of the month), the backend sends a push message to that endpoint using your VAPID keys.
-4. Your browser receives it and shows the notification — even if the app tab is closed.
+1. The browser registers a unique push endpoint with its own push service (Google's for Chrome,
+   Apple's for Safari).
+2. That endpoint and its encryption keys are stored per-device in the backend.
+3. A GitHub Actions cron job calls a token-authenticated endpoint on the backend once daily. The
+   backend finds subscriptions renewing within their lead time and sends a push to each device.
+4. The browser displays the notification, even with the app closed.
+
+Delivery is recorded in a ledger with a uniqueness constraint, so a re-run or duplicated trigger
+cannot send the same reminder twice. There is **no in-process scheduler** — the trigger is
+external, which keeps the backend stateless and safe to scale horizontally.
+
+iOS requires the app to be installed to the Home Screen before it will grant Web Push; the app
+ships a manifest and instructions for that, though the iOS path is implemented-but-unverified (no
+test device).
 
 ---
 
 ## Data & Privacy
 
-- **No bank linking.** You upload statements manually (or type subscriptions in).
-- **No financial credentials stored.** Ever.
-- **Row-Level Security (RLS)** in Supabase means every database query is automatically filtered to your own data — even if a bug in the code tried to fetch someone else's data, the database would block it.
-- **GDPR-aligned**: you can export and delete all your data.
+- **No bank linking, and no financial credentials stored.** Subscriptions are entered manually or
+  through the chat.
+- **Row-Level Security (RLS)** in Supabase filters every query to the authenticated user. Even if
+  application code had a bug and asked for another user's rows, the database would refuse. Every
+  user-scoped table has a cross-user denial test proving this.
+- **Auth is a Bearer JWT** in the `Authorization` header, never a cookie — CSRF is not applicable.
+- **No PII or message content in logs.**
+- **Strict Content-Security-Policy** on the served frontend; assistant output is sanitised and
+  model-generated URLs are never rendered as clickable links.
+- **Not yet implemented:** GDPR data export and full account deletion, and a published Privacy
+  Policy. These are required before the app is opened beyond the current beta group.
 
 ---
 
 ## Project Layout
 
 ```
-saas-subscription-auditor/
+Subscription-Auditor/
 ├── frontend/          ← React app (Vite + TypeScript)
-├── backend/           ← FastAPI app (Python)
-├── extension/         ← Chrome extension (Manifest V3)
-├── infra/             ← Azure setup notes + Supabase schema
-├── docs/              ← Project docs (spec, session plan, learning resources)
-├── docker-compose.yml ← Runs frontend + backend locally together
-└── .github/workflows/ ← CI/CD pipelines (auto-deploy on push)
+├── backend/           ← FastAPI app (Python 3.12)
+├── extension/         ← Chrome extension — placeholder, not yet built
+├── supabase/          ← Versioned SQL migrations
+├── infra/             ← Azure setup notes + Supabase configuration
+├── docs/              ← Specification, standards, decisions, ADRs
+├── .apm/              ← Development process record
+├── docker-compose.yml ← Runs frontend + backend locally
+└── .github/workflows/ ← CI/CD pipelines + the daily reminder trigger
 ```
 
 ---
@@ -141,21 +185,23 @@ saas-subscription-auditor/
 
 ```bash
 git clone <repo>
-cp backend/.env.example backend/.env       # fill in your Supabase + Groq keys
+cp backend/.env.example backend/.env       # Supabase + Gemini keys
 cp frontend/.env.example frontend/.env.local
 docker compose up
 ```
 
 - Frontend: http://localhost:5173
-- Backend API + docs: http://localhost:8000/docs
+- Backend API + interactive docs: http://localhost:8000/docs
 
-For the extension: run `npm run dev` inside `extension/`, then go to `chrome://extensions` → Load unpacked → select `extension/dist`.
+Note that Web Push requires HTTPS, so notifications cannot be fully exercised against the local
+dev server.
 
 ---
 
 ## Code Quality (pre-commit)
 
-Formatting, linting, and secret scanning run automatically on every commit via [pre-commit](https://pre-commit.com/), configured in `.pre-commit-config.yaml`.
+Formatting, linting, and secret scanning run automatically on every commit via
+[pre-commit](https://pre-commit.com/), configured in `.pre-commit-config.yaml`.
 
 ```bash
 uv tool install pre-commit   # one-time, any machine with uv installed
@@ -163,16 +209,65 @@ pre-commit install           # wires the git hook for this clone
 pre-commit run --all-files   # run every hook against the whole repo on demand
 ```
 
-Hooks: `ruff` + `black` (backend, via `backend/pyproject.toml`), `eslint` + `prettier` (frontend, via the frontend's own configs), `gitleaks` (blocks commits containing credential-shaped strings), plus basic hygiene checks (trailing whitespace, end-of-file newline, merge conflict markers, large files).
+Hooks: `ruff` + `black` (backend), `eslint` + `prettier` (frontend), `gitleaks` (blocks commits
+containing credential-shaped strings), plus hygiene checks (trailing whitespace, end-of-file
+newline, merge conflict markers, large files).
 
 ---
 
-## Docs
+## Development Process
 
-All detailed documents are in the `docs/` folder:
+This application was built using an agentic AI workflow: the work was decomposed into discrete tasks and executed by Claude operating in defined roles (backend and data, frontend, infrastructure), coordinated under [Agentic Project Management](https://github.com/sdi2200262/agentic-project-management) — an open-source methodology by [@sdi2200262](https://github.com/sdi2200262), used here with thanks. My role was architecture and technology selection, decomposition of the work into staged tasks with explicit validation criteria, and review, testing, and debugging of every agent-produced change before it was merged. Manual and live verification against the running application was my responsibility throughout, and consistently surfaced issues that passing test suites did not. The full process record — specifications, task briefs, per-task logs, review notes, and agent handoffs across four development sessions — is published in [`.apm/`](.apm/archives/README.md).
+
+---
+
+## Documentation
+
+Documentation lives in two folders, answering different questions. [`docs/`](docs/README.md)
+describes **what the system is and why it is built this way**. [`.apm/`](.apm/archives/README.md) records
+**how the work was carried out** — task briefs, agent logs, and review notes.
+
+### [`docs/`](docs/README.md) — the system
 
 | File | What's in it |
 |---|---|
-| `docs/APP_DESCRIPTION.md` | Full technical specification — features, architecture, data model, API surface |
-| `docs/APM_SESSIONS.md` | How the build is split into sessions (what gets built in what order) |
-| `docs/LEARNING_RESOURCES.md` | Curated links to learn the tech stack before starting |
+| [`APP_DESCRIPTION.md`](docs/APP_DESCRIPTION.md) | Full technical specification — features, architecture, data model, API surface. Describes the complete intended system, including the parts not yet built |
+| [`ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) | Non-negotiable standards for scalability, security, and privacy/GDPR. Enforced on every task |
+| [`DECISIONS.md`](docs/DECISIONS.md) | Chronological log of cross-cutting decisions, with reasoning and tradeoffs — including those later reversed |
+| [`adr/`](docs/adr/) | Architecture Decision Records for choices needing more room than a log entry |
+| [`APM_SESSIONS.md`](docs/APM_SESSIONS.md) | How the build is split into independently deployable sessions |
+| [`LEARNING_LOG.md`](docs/LEARNING_LOG.md) | Concepts encountered while building, with pointers into the code |
+| [`LEARNING_RESOURCES.md`](docs/LEARNING_RESOURCES.md) | Curated links for learning the stack |
+
+Also at the root: [`CLAUDE.md`](CLAUDE.md), the standing instruction file the AI agents operated
+under — the mechanism by which the standards above were applied to every task.
+
+### [`.apm/`](.apm/archives/README.md) — the process
+
+The development process record described above: specifications, the staged task breakdown with
+per-task validation criteria, one log per task, review notes, and agent handoffs across four
+sessions. Start with [`.apm/archives/README.md`](.apm/archives/README.md), which explains the methodology and
+suggests a reading order.
+
+---
+
+## Feedback
+
+Suggestions, bug reports, and questions about the approach are welcome — open an
+[issue](https://github.com/ArisS44/Subscription-Auditor/issues). Corrections to the documentation
+are useful too, as are notes on Greek strings that read unnaturally.
+
+This is a solo portfolio project rather than a maintained open-source library, so responses may be
+slow and not every suggestion will be adopted. Small, focused pull requests are still welcome; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for what helps and how contributions are licensed. **Please
+report security issues privately rather than in a public issue.**
+
+---
+
+## License
+
+Copyright © 2026 Aristeidis Skyllas. Licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE) — free to read, study, modify, and use for any
+noncommercial purpose, including research and education. Commercial use is not permitted.
+
+Third-party assets are not covered and keep their own licenses; see [`NOTICE`](NOTICE).

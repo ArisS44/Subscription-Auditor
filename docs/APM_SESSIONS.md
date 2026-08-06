@@ -111,6 +111,29 @@ data; the onboarding defect is gone.
 
 **Goal**: Persisted monthly insight, and bulk subscription entry.
 
+**Carried over from Session 4 — take these first.** Three beta-readiness Tasks were deferred at the
+close of Session 4 when the session pivoted to preparing the repository for publication. All three
+are small, independent, and were Ready (un-dispatched) at deferral:
+
+- **Chat link provenance** (Frontend) — model-generated URLs currently render as clickable links in
+  chat, violating the project's link-provenance rule. Confirmed live: an uncurated guidance answer
+  rendered `duolingo.com` as a working link. Cause is in `frontend/src/features/chat/Markdown.tsx`
+  — `marked` runs with `gfm: true` (autolinks bare domains) and `'a'`/`href` are allowlisted in
+  DOMPurify. Recommended fix is to disable GFM autolinking and drop `'a'` from the allowlist, so all
+  chat URLs become plain text; the curated link loses clickability, which fails safe. The
+  alternative (origin allowlist preserving curated links) carries a synchronisation burden against
+  the `service_guides` seed. Present the choice before implementing.
+- **Require a category on manually-added subscriptions** (Frontend) — a beta user's Netflix arrived
+  uncategorised. Not a defect: `subscription-schema.ts` defines `NO_CATEGORY = ''` as a sentinel that
+  `toCreateInput` maps to `null`, and the select simply defaults to nothing. Tighten the manual form
+  only; the chat path must still be able to leave `NULL` for a genuinely unrecognisable service.
+  Watch the edit path — existing rows hold `NULL`.
+- **Always-on replica & spend protection** (Infrastructure) — decide whether to set
+  `--min-replicas 1`. The subscription reads `PayAsYouGo` with `spendingLimit: Off`, so credit
+  exhaustion reaches a payment method with nothing to halt it. Azure Budgets alert but do not cap.
+  Establish how often the app actually scales to zero before spending to prevent it; the honest
+  outcome may be "no change needed", since cold starts are already accepted for a friends-only beta.
+
 **Scope:**
 - Backend: monthly report generator service (spend summary, top expense, upcoming renewals, trends,
   AI-generated recommendations) — reuses Session 2's analytics service; **per-currency, never blended**

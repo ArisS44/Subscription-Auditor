@@ -1,6 +1,17 @@
 # Claude Code & APM
+# The APM process record is published deliberately — see .apm/README.md.
+# Excluded below: the agent message-bus transport, worktree scratch space, the
+# installer manifest, and the APM framework's own guides (third-party, see
+# https://github.com/sdi2200262/agentic-project-management).
 .claude/
-.apm/
+.apm/bus/
+.apm/worktrees/
+.apm/metadata.json
+.apm/sessions/
+.apm/archives/*/bus/
+.apm/archives/*/worktrees/
+.apm/archives/*/metadata.json
+.apm/archives/*/sessions/
 
 # Environment variables
 .env
