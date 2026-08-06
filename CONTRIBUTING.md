@@ -17,8 +17,16 @@ useful:
 - **Corrections** — factual errors in the documentation, or Greek translations that read
   unnaturally. The Greek locale in particular benefits from native-speaker review.
 
-Security issues are the exception: please **do not** open a public issue. Contact the maintainer
-directly so it can be fixed before it is described publicly.
+## Security issues
+
+Security issues are the exception: please **do not** open a public issue. Use GitHub's private
+vulnerability reporting instead —
+[report a vulnerability](https://github.com/ArisS44/Subscription-Auditor/security/advisories/new),
+also reachable from the repository's **Security** tab. That keeps the report private until it is
+fixed.
+
+This is a personal project, so please be realistic about response times. If a report is urgent and
+goes unanswered, say so in the advisory thread.
 
 ## Pull requests
 

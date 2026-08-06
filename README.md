@@ -259,8 +259,11 @@ are useful too, as are notes on Greek strings that read unnaturally.
 
 This is a solo portfolio project rather than a maintained open-source library, so responses may be
 slow and not every suggestion will be adopted. Small, focused pull requests are still welcome; see
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for what helps and how contributions are licensed. **Please
-report security issues privately rather than in a public issue.**
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for what helps and how contributions are licensed.
+
+**Security issues:** please do not open a public issue — use
+[private vulnerability reporting](https://github.com/ArisS44/Subscription-Auditor/security/advisories/new)
+instead.
 
 ---
 
