@@ -1,4 +1,4 @@
-# SaaS Subscription Auditor
+# Subscription Auditor
 
 A personal web app for tracking, analyzing, and optimizing recurring subscriptions — AI tools,
 streaming, productivity apps. Bilingual (English/Greek), dark-mode dashboard, with an AI assistant
