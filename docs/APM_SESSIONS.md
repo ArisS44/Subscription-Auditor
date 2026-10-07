@@ -107,6 +107,37 @@ data; the onboarding defect is gone.
 
 ---
 
+## Planned — Health-check sweep (while paused, before Session 5)
+
+**Goal**: Confirm the paused production deployment is still working end to end. This is a check, not a
+feature session. Planned for mid-October 2026.
+
+**Context:** On 2026-10-08 GitHub warned that the `Reminder Job` workflow would be disabled after 60 days
+of repository inactivity, and it was kept enabled from the Actions page. That cron is the only thing that
+sends renewal reminders **and** rolls past renewal dates forward (`advance_past_renewal_dates`), so if it
+quietly stops, the app goes stale without any error. Expect the same warning every 60 days with no
+commits. A commit to `main` also resets the timer.
+
+**Check:**
+- **Reminder Job** — still enabled; recent scheduled runs are green; the response summary counts look
+  sane (no persistent `failed`).
+- **Renewal dates** — no active subscription has a `next_renewal_date` in the past.
+- **Push** — a due reminder actually arrives on a real device (desktop; iOS if available).
+- **Frontend + backend** — the prod site loads, sign-in works, the dashboard reads data, and the backend
+  wakes from scale-to-zero within the workflow's retry window.
+- **Supabase prod** — the project is not paused, and the migration history matches dev.
+- **Chat (Gemini)** — a live turn works in both `en` and `el`; the pinned model is still served; there
+  is Cloud Prepay balance left.
+- **CI/CD** — `backend.yml` and `frontend.yml` still pass on a manual `workflow_dispatch` (dependency or
+  action-version drift while idle).
+- **Azure** — check current spend against expectations; no expired secrets or tokens (e.g. the Static
+  Web Apps deploy token).
+
+**Done when**: every item above is checked, and anything broken is either fixed or written up here as
+carry-over work.
+
+---
+
 ## Session 5 — Reports & Invoice Import
 
 **Goal**: Persisted monthly insight, and bulk subscription entry.
